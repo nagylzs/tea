@@ -26,9 +26,7 @@ jobs:
         GOOS: linux
         GOARCH: amd64
       run: |
-        go build -ldflags \
-          -o tea \
-          cmd/tea/main.go
+        go build -o tea cmd/tea/main.go
 
     - name: 'Upload Linux Artifact'
       uses: actions/upload-artifact@v4
