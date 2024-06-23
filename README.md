@@ -23,7 +23,7 @@ Usage example: wait until "operation completed" appears in the output of a progr
 tea -c -p "operation completed" -s SIGINT -- command
 ```
 
-Detailed documentation is in (USAGE.txt)[cmd/tea/USAGE.txt] 
+Detailed documentation is in `cmd/tea/USAGE.txt`  (or just do `tea --help`)
 
 Please note that time based conditions are not yet implemented. They are a planned feature.
 
