@@ -334,6 +334,8 @@ func isGlobalOption(opt Option) bool {
 	switch opt {
 	case Help:
 		return true
+	case ShowVersion:
+		return true
 	case ListSignals:
 		return true
 	case PID:
