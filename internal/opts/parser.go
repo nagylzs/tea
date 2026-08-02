@@ -3,13 +3,15 @@ package opts
 import (
 	"errors"
 	"fmt"
-	"github.com/fatih/color"
 	"os"
 	"os/exec"
+
+	"github.com/fatih/color"
 )
 
 type Type struct {
 	Help           bool
+	ShowVersion    bool
 	ListSignals    bool
 	PidFile        string
 	LineBufferSize int
@@ -22,7 +24,7 @@ type Type struct {
 	ProgramArgs    []string
 }
 
-var Opts = Type{ListSignals: false, Help: false, LineBufferSize: 65535, Commands: make([]Command, 0)}
+var Opts = Type{ListSignals: false, Help: false, ShowVersion: false, LineBufferSize: 65535, Commands: make([]Command, 0)}
 
 var argIdx = 0  // arg index
 var cmdIdx = -1 // block index
@@ -31,6 +33,7 @@ type Option int
 
 const (
 	Help Option = iota
+	ShowVersion
 	ListSignals
 	PID
 	LineBufferSize
@@ -94,6 +97,7 @@ var shortOptions = map[string]Option{
 
 var longOptions = map[string]Option{
 	"--help":                  Help,
+	"--version":               ShowVersion,
 	"--list-signals":          ListSignals,
 	"--pid":                   PID,
 	"--line-buffer-size":      LineBufferSize,
@@ -172,6 +176,9 @@ func internalParseArgs() error {
 		switch opt {
 		case Help:
 			Opts.Help = true
+			return nil
+		case ShowVersion:
+			Opts.ShowVersion = true
 			return nil
 		case ListSignals:
 			Opts.ListSignals = true

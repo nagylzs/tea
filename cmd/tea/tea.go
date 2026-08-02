@@ -17,6 +17,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/nagylzs/tea/internal/opts"
+	"github.com/nagylzs/tea/internal/version"
 	"golang.org/x/sys/unix"
 )
 
@@ -65,6 +66,10 @@ func main() {
 	}
 	if o.Help {
 		fmt.Println(Usage)
+		os.Exit(0)
+	}
+	if o.ShowVersion {
+		version.PrintVersion()
 		os.Exit(0)
 	}
 	if o.ListSignals {

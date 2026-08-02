@@ -1,4 +1,5 @@
 tea COMMAND [COMMAND...] -- PROGRAM [ARG...]
+tea --version
 tea -h | --help
 tea -l | --list-signals
 
