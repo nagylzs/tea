@@ -1,10 +1,11 @@
 package opts
 
 import (
-	"github.com/fatih/color"
 	"regexp"
 	"syscall"
 	"time"
+
+	"github.com/fatih/color"
 )
 
 type CommandActions struct {
@@ -49,6 +50,11 @@ type Command struct {
 	LineEnabled  bool
 	Conditions   *CommandConditions
 	Actions      *CommandActions
+	Started      time.Time
+}
+
+func (c *Command) ResetStarted() {
+	c.Started = time.Now()
 }
 
 func CreateCommand() Command {

@@ -95,10 +95,15 @@ new line appears. Patterns work on lines. Lines does not contain their line-endi
 	Specifying this flag means that the command's patterns work on both stdout and stderr of PROGRAM. (The default is
 	to work on the standard output.)
 
-Time based conditions, only one of them can be used for a single command. Please note that time based conditions
-can trigger actions when PROGRAM does not emit any output (between two lines, of after the last line).
+TIME BASED CONDITIONS
 
-TIME BASED CONDITIONS ARE NOT IMPLEMENTED YET! THESE ARE PLANNED FEATURES
+--no-input-for-duration
+	Specify a timeout condition. This can only be used for patternless commands. Whenever a line appears on the input
+	stream, the timeout is reset. If the given amount of time is elapsed since the last input line, then the condition
+	becomes true within one second, and the command actions are executed. Please note that this command will always
+	be executed after the last line, and you can only use actions that don't need a "current line". If there is no
+	input for several seconds, then the condition becomes true in every idle second. If you want this to fire only once,
+	then you need to add an action that disables itself (e.g.  -c NAME --no-input-for-duration 10s --disable NAME ...)
 
 -t|--timeout DURATION
 	Specify a timeout condition. For patternless commands, the command will match unconditionally after the given
@@ -108,7 +113,15 @@ TIME BASED CONDITIONS ARE NOT IMPLEMENTED YET! THESE ARE PLANNED FEATURES
 
 	TODO: when streams are not shared, then we have two sets (copies) of commands. Should they both fire???
 
-Output stream manipulation actions:
+--or-timeout DURATION
+	Specify a timeout condition. For patternless commands, the command will match unconditionally after the given
+	DURATION. For commands with patterns, the command will match if the last pattern match evaluated to true,
+	OR at least the given timeout is elapsed. The action can be triggered either by an incoming matching line,
+	or after the given timeout (e.g. between two incoming lines, or after the last line).
+
+	TODO: when streams are not shared, then we have two sets (copies) of commands. Should they both fire???
+
+Output stream manipulation actions, they cannot be used with time based commands:
 
 --set-prefix PREFIX
     Add this prefix to the line before sending to output. The default prefix is the empty string. When multiple commands

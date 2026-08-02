@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/nagylzs/tea/internal/opts"
@@ -228,197 +229,340 @@ func WriteData(writer io.WriteCloser, ch chan string, wg *sync.WaitGroup) {
 	}
 }
 
-func ProcessLines(commands *[]opts.Command, CmdIdx map[string]int, chStdInIn chan string, chIn LineChannel, chStdOutOut chan string, chStdErrOut chan string, wgProc *sync.WaitGroup) {
-	for line := range chIn {
-		// Perform LineEnabled / LineDisabled at the beginning of the line
-		for _, cmd := range *commands {
-			if cmd.LineEnabled {
-				cmd.Disabled = false
-			} else if cmd.LineDisabled {
-				cmd.Disabled = true
+func ProcessLines(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, chIn LineChannel, chStdOutOut chan string, chStdErrOut chan string, wgProc *sync.WaitGroup) {
+	for cmdIdx := range *commands {
+		(*commands)[cmdIdx].ResetStarted()
+	}
+
+	const idleDuration = 1 * time.Second
+	idleTimer := time.NewTimer(idleDuration)
+	defer idleTimer.Stop()
+
+	lastLineArrived := time.Now()
+
+ForLoop:
+	for {
+		select {
+		case line, ok := <-chIn:
+			if !ok {
+				// Channel was closed, exit the loop
+				break ForLoop
 			}
+
+			processLine(commands, cmdIndices, chStdInIn, line, chStdErrOut, chStdOutOut)
+			lastLineArrived = time.Now()
+
+			// Simple Reset in Go 1.23+ (no manual draining required!)
+			idleTimer.Stop()
+			idleTimer.Reset(idleDuration)
+
+		case <-idleTimer.C:
+			processTimedCommands(commands, cmdIndices, lastLineArrived, chStdInIn, chStdOutOut)
+
+			// Reset timer to wait another second if channel remains idle
+			idleTimer.Reset(idleDuration)
 		}
-		// go over all commands
-		cmdIdx := 0
-		closeStdIn := false
-		var clr *color.Color = nil
-		for cmdIdx < len(*commands) {
+	}
+	//for line := range chIn {
+	//	processLine(commands, CmdIdx, chStdInIn, line, chStdErrOut, chStdOutOut)
+	//}
+	wgProc.Done()
+}
 
-			// eval conditions
+func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, lastLineArrived time.Time, chStdInIn chan string, chStdOutOut chan string) {
+	// go over all commands
+	cmdIdx := 0
+	closeStdIn := false
+	for cmdIdx < len(*commands) {
 
-			cmd := (*commands)[cmdIdx]
-			cmdIdx++
-			if cmd.Disabled { // skip disabled commands
-				continue
-			}
-			if line.InStdErr && !cmd.Conditions.StdErr { // skip by input source filter
-				continue
-			}
-			if !line.InStdErr && !cmd.Conditions.StdOut { // skip by input source filter
-				continue
-			}
-			// pattern matching
-			if !commandLineMatch(&line, &cmd) {
-				continue
-			}
-			/* TODO: process time based conditions
+		// eval conditions
 
-			AndTimeout         *time.Duration
-			OrTimeout          *time.Duration
-			MinMatchTime       *time.Duration
-			NoInputForDuration *time.Duration
+		cmd := (*commands)[cmdIdx]
+		cmdIdx++
 
-			The AndTimeout and OrTimeout could be implemented using a special Line object, that has nil line Value.
-			and emitted when the timeout is reached. The ProcessLines() method should save the "last match state"
-			of each command, and process these special lines using the "last match state" as the condition.
-
-			Steps to implement:
-
-			1. Make Line.value *string instead of string
-			2. Add command index reference Line.cmdIdx
-			3. When processing starts, create a new go routine for each command with a timeout, and emit a special
-			   line(s) when the timeout is reached. The emission target can be std-out-in or std-err-in, depending
-			   on the command's settings.
-			4. Rewrite ProcessLines, detect these special lines and treat them as timeout events. Process the action
-			   if the timeout has come, and the last state is "matched".
-			5. Think over what should happen when a timeout based command is enabled AFTER its timeout has come.
-			   Should the "enable" operation trigger its actions immediately or not?
-
-			The above should work for AndTimeout and OrTimeout. Test this, and only after that should we implement
-			MinMatchTime, MaxMatchTime, InputForDuration and NoInputForDuration.
-
-			*/
-
-			// process actions
-			a := cmd.Actions
-			if a.MarkStdOut != nil {
-				line.MarkStdOut = a.MarkStdOut
-			}
-			if a.MarkStdErr != nil {
-				line.MarkStdErr = a.MarkStdErr
-			}
-			if a.SendToStdOut {
-				line.OutStdErr = false
-			}
-			if a.SendToStdErr {
-				line.OutStdErr = true
-			}
-			if a.SetPrefix != nil {
-				line.Prefix = a.SetPrefix
-			}
-			if a.SetSuffix != nil {
-				line.Suffix = a.SetSuffix
-			}
-			if a.Color != nil {
-				clr = a.Color
-			}
-
-			if a.Signal != nil {
-				if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
-					log.Fatal(err)
-				}
-			}
-
-			if a.Input != nil {
-				chStdInIn <- *a.Input
-			}
-
-			if a.InputFile != nil {
-				log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
-			}
-
-			if a.CloseStdIn {
-				closeStdIn = true
-			}
-
-			if a.SetExitCode != nil {
-				m.FixedExitCode.Store(*a.SetExitCode)
-			}
-
-			if a.ClearExitCode {
-				m.FixedExitCode.Store(-1)
-			}
-
-			for _, n := range a.Disable {
-				i, ok := CmdIdx[n]
-				if !ok {
-					log.Fatal(fmt.Errorf("inernal error: --disable references to non-existent command %v", n))
-				}
-				(*commands)[i].Disabled = true
-			}
-
-			for _, n := range a.Enable {
-				i, ok := CmdIdx[n]
-				if !ok {
-					log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
-				}
-				(*commands)[i].Disabled = false
-			}
-
-			for _, n := range a.Toggle {
-				i, ok := CmdIdx[n]
-				if !ok {
-					log.Fatal(fmt.Errorf("inernal error: --toggle references to non-existent command %v", n))
-				}
-				(*commands)[i].Disabled = !(*commands)[i].Disabled
-			}
-
-			if a.NextLine {
-				break
-			}
-
-			if a.SkipTo != nil {
-				i, ok := CmdIdx[*a.SkipTo]
-				if !ok {
-					log.Fatal(fmt.Errorf("inernal error: --skip-to references to non-existent command %v", a.SkipTo))
-				}
-				cmdIdx = i
-				continue
-			}
-
+		if cmd.Disabled { // skip disabled commands
+			continue
 		}
 
-		if closeStdIn {
-			if err := m.StdIn.Close(); err != nil {
+		// only --no-input-for-duration is used as a timed command
+		if cmd.Conditions.NoInputForDuration == nil {
+			continue
+		}
+
+		elapsed := time.Now().Sub(lastLineArrived)
+		if elapsed < *cmd.Conditions.NoInputForDuration {
+			continue
+		}
+
+		// process actions
+		a := cmd.Actions
+
+		if a.Signal != nil {
+			if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
 				log.Fatal(err)
 			}
 		}
 
-		var format = func(fmt string, a ...interface{}) string {
-			return fmt
-		}
-		if clr != nil {
-			format = clr.SprintfFunc()
+		if a.Input != nil {
+			chStdInIn <- *a.Input
 		}
 
-		if line.OutStdErr {
-			if line.MarkStdErr != nil {
-				chStdErrOut <- format(*line.MarkStdErr)
-			} else {
-				if line.Prefix != nil {
-					chStdErrOut <- format(*line.Prefix)
-				}
-				chStdErrOut <- line.Value
-				if line.Suffix != nil {
-					chStdErrOut <- format(*line.Suffix)
-				}
-			}
-		} else {
-			if line.MarkStdOut != nil {
-				chStdOutOut <- format(*line.MarkStdOut)
-			} else {
-				if line.Prefix != nil {
-					chStdOutOut <- format(*line.Prefix)
-				}
-				chStdOutOut <- format(line.Value)
-				if line.Suffix != nil {
-					chStdOutOut <- format(*line.Suffix)
-				}
-			}
+		if a.InputFile != nil {
+			log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
+		}
 
+		if a.CloseStdIn {
+			closeStdIn = true
+		}
+
+		if a.SetExitCode != nil {
+			m.FixedExitCode.Store(*a.SetExitCode)
+		}
+
+		if a.ClearExitCode {
+			m.FixedExitCode.Store(-1)
+		}
+
+		for _, n := range a.Disable {
+			i, ok := cmdIndices[n]
+			if !ok {
+				log.Fatal(fmt.Errorf("inernal error: --disable references to non-existent command %v", n))
+			}
+			(*commands)[i].Disabled = true
+		}
+
+		for _, n := range a.Enable {
+			i, ok := cmdIndices[n]
+			if !ok {
+				log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
+			}
+			(*commands)[i].Disabled = false
+		}
+
+		for _, n := range a.Toggle {
+			i, ok := cmdIndices[n]
+			if !ok {
+				log.Fatal(fmt.Errorf("inernal error: --toggle references to non-existent command %v", n))
+			}
+			(*commands)[i].Disabled = !(*commands)[i].Disabled
+		}
+
+		if a.NextLine {
+			break
+		}
+
+		if a.SkipTo != nil {
+			i, ok := cmdIndices[*a.SkipTo]
+			if !ok {
+				log.Fatal(fmt.Errorf("inernal error: --skip-to references to non-existent command %v", a.SkipTo))
+			}
+			cmdIdx = i
+			continue
+		}
+
+	}
+
+	if closeStdIn {
+		if err := m.StdIn.Close(); err != nil {
+			log.Fatal(err)
 		}
 	}
-	wgProc.Done()
+
+}
+
+func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, line Line, chStdErrOut chan string, chStdOutOut chan string) {
+	// Perform LineEnabled / LineDisabled at the beginning of the line
+	for _, cmd := range *commands {
+		if cmd.LineEnabled {
+			cmd.Disabled = false
+		} else if cmd.LineDisabled {
+			cmd.Disabled = true
+		}
+	}
+	// go over all commands
+	cmdIdx := 0
+	closeStdIn := false
+	var clr *color.Color = nil
+	for cmdIdx < len(*commands) {
+
+		// eval conditions
+
+		cmd := (*commands)[cmdIdx]
+		cmdIdx++
+
+		// --no-input-for-duration is not used in line processing, it is a timed command
+		if cmd.Conditions.NoInputForDuration != nil {
+			continue
+		}
+
+		if cmd.Disabled { // skip disabled commands
+			continue
+		}
+		if line.InStdErr && !cmd.Conditions.StdErr { // skip by input source filter
+			continue
+		}
+		if !line.InStdErr && !cmd.Conditions.StdOut { // skip by input source filter
+			continue
+		}
+		// pattern matching
+		if !commandLineMatch(&line, &cmd) {
+			continue
+		}
+		/* TODO: process time based conditions
+
+		AndTimeout         *time.Duration
+		OrTimeout          *time.Duration
+		MinMatchTime       *time.Duration
+
+		The AndTimeout and OrTimeout could be implemented using a special Line object, that has nil line Value.
+		and emitted when the timeout is reached. The ProcessLines() method should save the "last match state"
+		of each command, and process these special lines using the "last match state" as the condition.
+
+		Steps to implement:
+
+		1. Make Line.value *string instead of string
+		2. Add command index reference Line.cmdIdx
+		3. When processing starts, create a new go routine for each command with a timeout, and emit a special
+		   line(s) when the timeout is reached. The emission target can be std-out-in or std-err-in, depending
+		   on the command's settings.
+		4. Rewrite ProcessLines, detect these special lines and treat them as timeout events. Process the action
+		   if the timeout has come, and the last state is "matched".
+		5. Think over what should happen when a timeout based command is enabled AFTER its timeout has come.
+		   Should the "enable" operation trigger its actions immediately or not?
+
+		The above should work for AndTimeout and OrTimeout. Test this, and only after that should we implement
+		MinMatchTime, MaxMatchTime, InputForDuration.
+
+		*/
+
+		// process actions
+		a := cmd.Actions
+		if a.MarkStdOut != nil {
+			line.MarkStdOut = a.MarkStdOut
+		}
+		if a.MarkStdErr != nil {
+			line.MarkStdErr = a.MarkStdErr
+		}
+		if a.SendToStdOut {
+			line.OutStdErr = false
+		}
+		if a.SendToStdErr {
+			line.OutStdErr = true
+		}
+		if a.SetPrefix != nil {
+			line.Prefix = a.SetPrefix
+		}
+		if a.SetSuffix != nil {
+			line.Suffix = a.SetSuffix
+		}
+		if a.Color != nil {
+			clr = a.Color
+		}
+
+		if a.Signal != nil {
+			if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		if a.Input != nil {
+			chStdInIn <- *a.Input
+		}
+
+		if a.InputFile != nil {
+			log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
+		}
+
+		if a.CloseStdIn {
+			closeStdIn = true
+		}
+
+		if a.SetExitCode != nil {
+			m.FixedExitCode.Store(*a.SetExitCode)
+		}
+
+		if a.ClearExitCode {
+			m.FixedExitCode.Store(-1)
+		}
+
+		for _, n := range a.Disable {
+			i, ok := cmdIndices[n]
+			if !ok {
+				log.Fatal(fmt.Errorf("inernal error: --disable references to non-existent command %v", n))
+			}
+			(*commands)[i].Disabled = true
+		}
+
+		for _, n := range a.Enable {
+			i, ok := cmdIndices[n]
+			if !ok {
+				log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
+			}
+			(*commands)[i].Disabled = false
+		}
+
+		for _, n := range a.Toggle {
+			i, ok := cmdIndices[n]
+			if !ok {
+				log.Fatal(fmt.Errorf("inernal error: --toggle references to non-existent command %v", n))
+			}
+			(*commands)[i].Disabled = !(*commands)[i].Disabled
+		}
+
+		if a.NextLine {
+			break
+		}
+
+		if a.SkipTo != nil {
+			i, ok := cmdIndices[*a.SkipTo]
+			if !ok {
+				log.Fatal(fmt.Errorf("inernal error: --skip-to references to non-existent command %v", a.SkipTo))
+			}
+			cmdIdx = i
+			continue
+		}
+
+	}
+
+	if closeStdIn {
+		if err := m.StdIn.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	var format = func(fmt string, a ...interface{}) string {
+		return fmt
+	}
+	if clr != nil {
+		format = clr.SprintfFunc()
+	}
+
+	if line.OutStdErr {
+		if line.MarkStdErr != nil {
+			chStdErrOut <- format(*line.MarkStdErr)
+		} else {
+			if line.Prefix != nil {
+				chStdErrOut <- format(*line.Prefix)
+			}
+			chStdErrOut <- line.Value
+			if line.Suffix != nil {
+				chStdErrOut <- format(*line.Suffix)
+			}
+		}
+	} else {
+		if line.MarkStdOut != nil {
+			chStdOutOut <- format(*line.MarkStdOut)
+		} else {
+			if line.Prefix != nil {
+				chStdOutOut <- format(*line.Prefix)
+			}
+			chStdOutOut <- format(line.Value)
+			if line.Suffix != nil {
+				chStdOutOut <- format(*line.Suffix)
+			}
+		}
+
+	}
 }
 
 func commandLineMatch(l *Line, o *opts.Command) bool {

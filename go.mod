@@ -1,6 +1,7 @@
 module github.com/nagylzs/tea
 
-go 1.21.2
+// at least 1.23 is required because of how timers work
+go 1.25
 
 require golang.org/x/sys v0.14.0
 

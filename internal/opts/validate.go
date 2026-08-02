@@ -98,10 +98,36 @@ func validateCommand(cmdIdx int) error {
 		return errors.New("only a single timeout based condition can be given for a command")
 	}
 
+	if nNonNullDurations(c.AndTimeout, c.OrTimeout, c.MinMatchTime) > 1 {
+		return errors.New("--timeout, --or-timeout and --min-match-time is not implemented yet")
+	}
+
+	hasLine := c.NoInputForDuration == nil
+
+	if !hasLine && len(c.CompiledPatterns) > 0 {
+		return errors.New("--no-input-for-duration cannot be combined with pattern matching")
+	}
+
 	a := cmd.Actions
 
 	if a.SendToStdOut && a.SendToStdErr {
 		return errors.New("--send-to-stdout and --send-to-stderr cannot be combined")
+	}
+
+	if !hasLine && (a.SendToStdOut || a.SendToStdErr) {
+		return errors.New("this command has no 'current line', cannot --send-to-stdout or --send-to-stderr")
+	}
+
+	if !hasLine && (a.MarkStdOut != nil || a.MarkStdErr != nil) {
+		return errors.New("this command has no 'current line', cannot --mark-to-stdout or --mark-to-stderr")
+	}
+
+	if !hasLine && (a.SetPrefix != nil || a.SetSuffix != nil) {
+		return errors.New("this command has no 'current line', cannot --set-prefix or --set-suffix")
+	}
+
+	if !hasLine && (a.Color != nil) {
+		return errors.New("this command has no 'current line', cannot set color attributes")
 	}
 
 	if a.SetExitCode != nil && a.ClearExitCode {
