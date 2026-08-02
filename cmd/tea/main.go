@@ -5,9 +5,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"github.com/fatih/color"
-	"github.com/nagylzs/tea/internal/opts"
-	"golang.org/x/sys/unix"
 	"io"
 	"log"
 	"os"
@@ -16,6 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+
+	"github.com/fatih/color"
+	"github.com/nagylzs/tea/internal/opts"
+	"golang.org/x/sys/unix"
 )
 
 //go:embed USAGE.txt
@@ -349,9 +350,9 @@ func ProcessLines(commands *[]opts.Command, CmdIdx map[string]int, chStdInIn cha
 			for _, n := range a.Enable {
 				i, ok := CmdIdx[n]
 				if !ok {
-					log.Fatal(fmt.Errorf("inernal error: --enable references to non-existent command %v", n))
+					log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
 				}
-				(*commands)[i].Disabled = true
+				(*commands)[i].Disabled = false
 			}
 
 			for _, n := range a.Toggle {
