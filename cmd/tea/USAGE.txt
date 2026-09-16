@@ -168,7 +168,7 @@ the previous color, there is no support for "calculating" a color by modifying i
 --bold
     Output **bold** ANSI terminal sequence
 
---bold
+--italic
     Output **italic** ANSI terminal sequence
 
 --faint

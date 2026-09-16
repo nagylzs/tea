@@ -245,7 +245,7 @@ func internalParseArgs() error {
 		case Italic:
 			changeColorAttribute(color.Italic)
 		case Faint:
-			changeColorAttribute(color.Bold)
+			changeColorAttribute(color.Faint)
 		case Underline:
 			changeColorAttribute(color.Underline)
 		case BlinkSlow:
