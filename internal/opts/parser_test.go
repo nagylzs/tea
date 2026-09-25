@@ -115,6 +115,16 @@ func TestGlobalOptions(t *testing.T) {
 			t.Errorf("LineBufferSize = %d", o.LineBufferSize)
 		}
 	})
+	t.Run("--no-stdin", func(t *testing.T) {
+		o := mustParse(t, withTail("--no-stdin", "-c")...)
+		if !o.NoStdIn {
+			t.Errorf("NoStdIn not set")
+		}
+		o = mustParse(t, withTail("-c")...)
+		if o.NoStdIn {
+			t.Errorf("NoStdIn set by default")
+		}
+	})
 	t.Run("--share-commands", func(t *testing.T) {
 		o := mustParse(t, withTail("--share-commands", "-c")...)
 		if !o.ShareCommands || o.ShareStreams {

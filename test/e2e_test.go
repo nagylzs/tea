@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,10 +55,32 @@ type result struct {
 	took   time.Duration
 }
 
-// runTea runs tea with the given arguments and returns its captured streams,
-// exit code and running time. It fails the test if tea cannot be started or
-// does not finish within 20 seconds.
+// stdinSpec says what tea's own stdin is during a test.
+type stdinSpec struct {
+	null     bool   // /dev/null: immediate end of file
+	data     string // piped data, followed by end of file unless keepOpen
+	keepOpen bool   // after data, keep the pipe open (like a terminal after one line)
+	// neither null nor data: a pipe that is never written, like an idle terminal
+}
+
+var (
+	stdinOpen = stdinSpec{}
+	stdinNull = stdinSpec{null: true}
+)
+
+func stdinData(s string) stdinSpec     { return stdinSpec{data: s} }
+func stdinDataOpen(s string) stdinSpec { return stdinSpec{data: s, keepOpen: true} }
+
+// runTea runs tea with an idle (open, never written) stdin. See runTeaStdin.
 func runTea(t *testing.T, args ...string) result {
+	t.Helper()
+	return runTeaStdin(t, stdinOpen, args...)
+}
+
+// runTeaStdin runs tea with the given stdin and arguments and returns its
+// captured streams, exit code and running time. It fails the test if tea
+// cannot be started or does not finish within 20 seconds.
+func runTeaStdin(t *testing.T, in stdinSpec, args ...string) result {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -66,6 +89,25 @@ func runTea(t *testing.T, args ...string) result {
 	var so, se bytes.Buffer
 	cmd.Stdout = &so
 	cmd.Stderr = &se
+	if !in.null {
+		// an *os.File is handed to tea directly, so cmd.Wait does not wait for
+		// a copying goroutine and the pipe can stay open as long as we like
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd.Stdin = r
+		defer r.Close()
+		defer w.Close()
+		if in.data != "" {
+			go func() {
+				_, _ = io.WriteString(w, in.data)
+				if !in.keepOpen {
+					w.Close()
+				}
+			}()
+		}
+	}
 	start := time.Now()
 	err := cmd.Run()
 	took := time.Since(start)
@@ -787,6 +829,79 @@ func TestNoInputForRepeatsEveryIdleSecond(t *testing.T) {
 	// the idle timer ticks once per second: one tick in the 1.5s pause (x on -> "> b"),
 	// two ticks in the 2.5s pause (x off, then on again -> "> c")
 	expect(t, r, "a\n> b\n> c\n", "", 0)
+}
+
+// ---------------------------------------------------------------------------
+// Forwarding tea's own stdin
+
+func TestStdinForwarding(t *testing.T) {
+	t.Run("lines and end of file are forwarded", func(t *testing.T) {
+		r := runTeaStdin(t, stdinData("a\nb\n"), tea([]string{"-c"}, emit("stdin")...)...)
+		expect(t, r, "input: a\ninput: b\neof\n", "", 0)
+	})
+	t.Run("partial last line is forwarded as is", func(t *testing.T) {
+		r := runTeaStdin(t, stdinData("abc"), tea([]string{"-c"}, emit("stdin")...)...)
+		expect(t, r, "input: abc\neof\n", "", 0)
+	})
+	t.Run("large input arrives intact", func(t *testing.T) {
+		big := strings.Repeat("0123456789abcdef\n", 65536) // 1 MiB
+		r := runTeaStdin(t, stdinData(big), tea([]string{"-c"}, emit("count")...)...)
+		expect(t, r, fmt.Sprintf("bytes: %d\n", len(big)), "", 0)
+	})
+	t.Run("binary data passes through unchanged", func(t *testing.T) {
+		bin := make([]byte, 256)
+		for i := range bin {
+			bin[i] = byte(i)
+		}
+		r := runTeaStdin(t, stdinData(string(bin)), tea([]string{"-c"}, emit("count")...)...)
+		expect(t, r, "bytes: 256\n", "", 0)
+	})
+	t.Run("/dev/null closes the child's stdin immediately", func(t *testing.T) {
+		r := runTeaStdin(t, stdinNull, tea([]string{"-c"}, emit("stdin")...)...)
+		expect(t, r, "eof\n", "", 0)
+	})
+	t.Run("an idle stdin keeps the child's stdin open until --close", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "--close"}, emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\neof\n", "", 0)
+	})
+	t.Run("forwarded input and --send-input share one ordered stream", func(t *testing.T) {
+		// "one" arrives on tea's stdin (which then stays open, like a terminal);
+		// when the child echoes it, a command sends "two", then --close ends it.
+		r := runTeaStdin(t, stdinDataOpen("one\n"), tea([]string{
+			"-c", "-p", "^input: one$", "-i", "two\n",
+			"-c", "-p", "^input: two$", "--close"}, emit("stdin")...)...)
+		expect(t, r, "input: one\ninput: two\neof\n", "", 0)
+	})
+	t.Run("forwarded end of file drops a later --send-input with a warning", func(t *testing.T) {
+		r := runTeaStdin(t, stdinNull, tea([]string{"-c", "-p", "^eof$", "-i", "late\n"}, emit("stdin", "sleep:0.3")...)...)
+		if r.stdout != "eof\n" || r.code != 0 || !strings.Contains(r.stderr, "already closed") {
+			t.Errorf("stdout=%q stderr=%q code=%d", r.stdout, r.stderr, r.code)
+		}
+	})
+	t.Run("piped input to a child that never reads it does not break tea", func(t *testing.T) {
+		big := strings.Repeat("x", 1<<20)
+		r := runTeaStdin(t, stdinData(big), tea([]string{"-c"}, emit("out:a", "out:b")...)...)
+		expect(t, r, "a\nb\n", "", 0)
+	})
+}
+
+func TestNoStdin(t *testing.T) {
+	t.Run("piped input is not forwarded", func(t *testing.T) {
+		r := runTeaStdin(t, stdinData("a\n"), tea([]string{"--no-stdin", "-c", "-p", "^ready$", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\neof\n", "", 0)
+	})
+	t.Run("/dev/null does not close the child's stdin, --send-input still works", func(t *testing.T) {
+		r := runTeaStdin(t, stdinNull, tea([]string{"--no-stdin", "-c", "-p", "^ready$", "-i", "hello\n",
+			"-c", "-p", "^input: hello$", "--close"}, emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: hello\neof\n", "", 0)
+	})
+	t.Run("child waiting for stdin ends when it exits on its own", func(t *testing.T) {
+		r := runTeaStdin(t, stdinNull, tea([]string{"--no-stdin", "-c"}, emit("out:a", "exit:4")...)...)
+		if r.stdout != "a\n" || r.code != 4 {
+			t.Errorf("stdout=%q code=%d", r.stdout, r.code)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ type Type struct {
 	PidFile        string
 	LineBufferSize int
 	NoStdBuf       bool
+	NoStdIn        bool
 	ShareCommands  bool
 	ShareStreams   bool
 	Commands       []Command
@@ -42,6 +43,7 @@ const (
 	PID
 	LineBufferSize
 	NoStdBuf
+	NoStdIn
 	ShareCommands
 	ShareStreams
 	NewCommand
@@ -106,6 +108,7 @@ var longOptions = map[string]Option{
 	"--pid":              PID,
 	"--line-buffer-size": LineBufferSize,
 	"--no-stdbuf":        NoStdBuf,
+	"--no-stdin":         NoStdIn,
 	"--share-commands":   ShareCommands,
 	"--share-streams":    ShareStreams,
 	"--command":          NewCommand,
@@ -193,6 +196,8 @@ func internalParseArgs() error {
 			Opts.LineBufferSize, err2 = popIntArg("--line-buffer-size")
 		case NoStdBuf:
 			Opts.NoStdBuf = true
+		case NoStdIn:
+			Opts.NoStdIn = true
 		case ShareCommands:
 			Opts.ShareCommands = true
 		case ShareStreams:
@@ -349,6 +354,8 @@ func isGlobalOption(opt Option) bool {
 	case LineBufferSize:
 		return true
 	case NoStdBuf:
+		return true
+	case NoStdIn:
 		return true
 	case ShareCommands:
 		return true

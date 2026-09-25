@@ -16,8 +16,8 @@
 - [x] Implement `--send-input-file`. Done: read at execution time, queued like `--send-input`.
 - [ ] Implement `--timeout`, `--or-timeout`, `--min-match-time` (parsed, rejected in `validate.go`). Design sketch is
   in the comment inside `processLine()`. Decide whether both per-stream command chains should fire.
-- [ ] Forward tea's own stdin to the child (`ReadStdIn` call is commented out in `main()`); it should be another
-  producer on `chStdInIn`.
+- [x] Forward tea's own stdin to the child. Done: `ForwardStdIn`, raw chunks, EOF closes the child's stdin,
+  `--no-stdin` opts out.
 
 ## Correctness
 

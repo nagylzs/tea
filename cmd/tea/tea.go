@@ -118,11 +118,10 @@ func main() {
 	// --send-input and --close requests from all processors go through one
 	// writer goroutine so that they reach the child's stdin in order.
 	chStdInIn := make(chan stdInRequest)
-	wgStdIn := sync.WaitGroup{}
-	wgStdIn.Add(1)
-	go WriteStdIn(m.StdIn, chStdInIn, &wgStdIn)
-	// TODO: forward tea's own stdin to the child as another producer of chStdInIn
-	//go ReadStdIn(os.Stdin, m.Opts.LineBufferSize, chStdInIn)
+	go WriteStdIn(m.StdIn, chStdInIn)
+	if !o.NoStdIn {
+		go ForwardStdIn(os.Stdin, o.LineBufferSize, chStdInIn)
+	}
 
 	chStdOutOut := make(chan string, 1)
 	chStdErrOut := make(chan string, 1)
@@ -189,7 +188,6 @@ func main() {
 		wgProc.Wait()
 		close(chStdOutOut)
 		close(chStdErrOut)
-		close(chStdInIn)
 	}()
 
 	wgWrite := sync.WaitGroup{}
@@ -198,7 +196,10 @@ func main() {
 	go WriteData(os.Stderr, chStdErrOut, &wgWrite)
 
 	wgWrite.Wait()
-	wgStdIn.Wait()
+	// Let queued --send-input data reach the child before Wait closes its stdin.
+	flushed := make(chan struct{})
+	chStdInIn <- stdInRequest{done: flushed}
+	<-flushed
 	err = cmd.Wait()
 
 	ec := m.FixedExitCode.Load()
@@ -244,11 +245,13 @@ func WriteData(writer io.WriteCloser, ch chan string, wg *sync.WaitGroup) {
 	}
 }
 
-// stdInRequest is one item for the child's stdin: either data to write or a
-// request to close the pipe.
+// stdInRequest is one item for the child's stdin: data to write, a request to
+// close the pipe, or a flush marker.
 type stdInRequest struct {
-	data  string
-	close bool
+	data      string
+	close     bool
+	forwarded bool          // data copied from tea's own stdin: dropped silently once stdin is gone
+	done      chan struct{} // flush marker: closed once everything queued before it was handled
 }
 
 // unboundedQueue returns a channel that yields everything sent to in, in order,
@@ -282,14 +285,17 @@ func unboundedQueue(in <-chan stdInRequest) <-chan stdInRequest {
 	return out
 }
 
-// WriteStdIn serves --send-input and --close requests on the child's stdin, in
-// the order they were issued. Once stdin is closed (by --close, or because the
-// child exited) further input is dropped with a warning instead of killing tea.
-func WriteStdIn(w io.WriteCloser, ch chan stdInRequest, wg *sync.WaitGroup) {
-	defer wg.Done()
+// WriteStdIn serves the child's stdin: forwarded input, --send-input and
+// --close requests, in the order they were issued. It runs until tea exits.
+// Once stdin is closed (by --close, by end of file on tea's own stdin, or
+// because the child exited) further --send-input data is dropped with a
+// warning; forwarded data is dropped silently, as in an ordinary pipeline.
+func WriteStdIn(w io.WriteCloser, ch chan stdInRequest) {
 	closed := false
 	for req := range unboundedQueue(ch) {
 		switch {
+		case req.done != nil:
+			close(req.done)
 		case req.close && closed:
 			// closing twice is harmless
 		case req.close:
@@ -298,11 +304,35 @@ func WriteStdIn(w io.WriteCloser, ch chan stdInRequest, wg *sync.WaitGroup) {
 				log.Printf("warning: cannot close stdin of PROGRAM: %v", err)
 			}
 		case closed:
-			log.Printf("warning: --send-input dropped, stdin of PROGRAM is already closed")
+			if !req.forwarded {
+				log.Printf("warning: --send-input dropped, stdin of PROGRAM is already closed")
+			}
 		default:
 			if _, err := io.WriteString(w, req.data); err != nil {
-				log.Printf("warning: cannot write to stdin of PROGRAM: %v", err)
+				// the child went away (or closed its stdin): treat stdin as closed from now on
+				closed = true
+				if !req.forwarded {
+					log.Printf("warning: cannot write to stdin of PROGRAM: %v", err)
+				}
 			}
+		}
+	}
+}
+
+// ForwardStdIn copies tea's own stdin to the child through the stdin writer.
+// It copies chunks as they arrive, not lines, so partial lines and binary data
+// pass through unchanged. End of file (or a read error) closes the child's
+// stdin, exactly as if PROGRAM had been started without tea.
+func ForwardStdIn(r io.Reader, bufSize int, ch chan<- stdInRequest) {
+	buf := make([]byte, bufSize)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			ch <- stdInRequest{data: string(buf[:n]), forwarded: true}
+		}
+		if err != nil {
+			ch <- stdInRequest{close: true}
+			return
 		}
 	}
 }

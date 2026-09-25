@@ -37,12 +37,13 @@ Tests live in two places:
 - `internal/opts/parser_test.go` — table-driven tests of the argument parser and validator. They reset the
   package globals (`Opts`, `argIdx`, `cmdIdx`) and set `os.Args` directly, so keep them in package `opts`.
 - `test/e2e_test.go` (package `e2e`) — end-to-end tests. `TestMain` builds the binary into a temp dir and every test
-  runs it against a python child: `test/emit.py` (scriptable stdout/stderr/sleep/exit/stdin tokens), `test/signals.py`
+  runs it against a python child. By default tea's stdin is a pipe that is never written (an idle terminal);
+  `stdinData`/`stdinNull` model piped input and `/dev/null`. Children: `test/emit.py` (scriptable stdout/stderr/sleep/exit/stdin tokens), `test/signals.py`
   (prints received signals, exits on SIGTERM) and `test/withpty.py` (runs tea under a pseudo-terminal, needed for the
   color tests because fatih/color disables itself when stdout is not a TTY). Cross-stream ordering is not
   deterministic, so tests that depend on it put `sleep:` tokens between lines.
 
-Not covered because not implemented: `--timeout`, `--or-timeout`, `--min-match-time`, stdin forwarding.
+Not covered because not implemented: `--timeout`, `--or-timeout`, `--min-match-time`.
 
 `go.mod` declares `go 1.25`; the code relies on Go 1.23+ `time.Timer.Reset` semantics (no manual channel draining).
 
@@ -88,12 +89,15 @@ commands run. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
 `--next-line`, `--skip-to`). Line-specific actions (mark/prefix/suffix/color/send-to) live only in `processLine`. A new
 action goes in `applyActions` unless it needs the `Line`.
 
-`--send-input` and `--close` are `stdInRequest`s sent on `chStdInIn`; one `WriteStdIn` goroutine serves them in
-order through `unboundedQueue`, so a processor never blocks on the child's stdin (which could deadlock against the
-child's stdout). The close is queued after the line's inputs. Writes to an already closed stdin log a warning.
-`main()` closes `chStdInIn` after the processors finish and waits for the writer before `cmd.Wait()`.
+The child's stdin has one owner, the `WriteStdIn` goroutine, fed through `chStdInIn` by three producers:
+`--send-input`/`--send-input-file`/`--close` from the processors, and `ForwardStdIn`, which copies tea's own stdin in
+raw chunks and queues a close at EOF (skipped with `--no-stdin`). Requests pass through `unboundedQueue`, so a
+processor never blocks on the child's stdin (which could deadlock against the child's stdout). The close is queued
+after the line's inputs. Once stdin is closed or a write fails, `--send-input` data is dropped with a warning and
+forwarded data silently. The writer never exits; `main()` sends a `done` flush marker and waits for it before
+`cmd.Wait()`.
 
 `--send-input-file` reads the file in `applyActions` when the action fires and queues the contents the same way.
 
 `--timeout`, `--or-timeout`, `--min-match-time` are parsed and rejected in `validate.go` as not implemented; a design
-sketch for them is in the big comment inside `processLine`. Forwarding tea's own stdin (`ReadStdIn`, commented out in `main()`) would be another producer on `chStdInIn`.
+sketch for them is in the big comment inside `processLine`.

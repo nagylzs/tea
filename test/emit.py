@@ -14,6 +14,7 @@ Each argument is a token that is executed in order:
               write TEXT and a newline into the file PATH (creating it)
   stdin       read stdin until EOF, writing "input: <line>" for every line,
               then write "eof"
+  count       read stdin (binary) until EOF, then write "bytes: <n>"
 
 All writes are flushed immediately, so output buffering never depends on
 stdbuf(1) (which python ignores anyway).
@@ -55,6 +56,10 @@ def main() -> int:
                 sys.stdout.write(f"input: {line.rstrip(chr(10))}\n")
                 sys.stdout.flush()
             sys.stdout.write("eof\n")
+            sys.stdout.flush()
+        elif kind == "count":
+            data = sys.stdin.buffer.read()
+            sys.stdout.write(f"bytes: {len(data)}\n")
             sys.stdout.flush()
         else:
             sys.stderr.write(f"emit.py: unknown token {token!r}\n")

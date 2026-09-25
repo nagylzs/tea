@@ -40,6 +40,16 @@ Global options:
     details. For example, most python programs should be started with PYTHONUNBUFFERED env or "python -u" to prevent
     buffering.
 
+--no-stdin
+    By default, tea forwards its own standard input to PROGRAM, and closes the standard input of PROGRAM when its own
+    standard input reaches end of file - just as if PROGRAM had been started without tea. With --no-stdin, tea does not
+    read its own standard input at all: the standard input of PROGRAM is only written by --send-input and
+    --send-input-file, and only closed by --close (or when PROGRAM exits). Use --no-stdin when tea runs in the
+    background of an interactive shell (otherwise the shell stops it with SIGTTIN as soon as it reads the terminal),
+    or when the standard input of tea is not meant for PROGRAM. In particular, when tea is started with its standard
+    input at end of file (e.g. from cron, or with < /dev/null) and you rely on --send-input, use --no-stdin: otherwise
+    the end of file is forwarded immediately and the standard input of PROGRAM is closed before anything is sent.
+
 --share-commands
     By default, tea will create two copies of the given commands. One command chain will process the lines read from
     stdout, and the other will process lines read from stderr, in parallel. It also means, that command states and their
@@ -189,8 +199,9 @@ Input manipulation actions:
 	Input action: specify an input value that will be written to stdin of PROGRAM when the command is executed.
 	Please note that you need to add a newline at the end of INPUT if you want to send it to PROGRAM. Inputs are
 	written in the order the commands executed them, and they are queued: PROGRAM not reading its stdin never delays
-	the processing of its output. If stdin of PROGRAM is already closed (see --close, or because PROGRAM has exited),
-	then the input is dropped and a warning is written to the stderr of tea.
+	the processing of its output. Inputs are interleaved with the forwarded standard input of tea in the order they
+	occur. If stdin of PROGRAM is already closed (see --close and --no-stdin, or because PROGRAM has exited), then the
+	input is dropped and a warning is written to the stderr of tea.
 
 -f|--send-input-file FILENAME
 	Input file action: specify an input file whose contents will be written to stdin of PROGRAM when the command is
