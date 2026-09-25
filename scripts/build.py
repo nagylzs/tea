@@ -1,107 +1,67 @@
-import os
-import sys
-import re
-import platform
-import copy
+#!/usr/bin/env python3
+"""Release build for tea (Linux only).
+
+usage: scripts/build.py [--debug] [ARCH...]
+
+Builds dist/linux/ARCH/tea for every ARCH given (default: amd64 arm64) as a
+static, stripped binary with -trimpath, and injects the version, commit,
+branch and build time into internal/version. --debug keeps symbols and DWARF.
+The working tree is not modified.
+"""
 import datetime
-import subprocess as sp
+import os
+import pathlib
+import subprocess
+import sys
 
-targets=["tea"]
-
-DIR=os.path.abspath(os.path.join(__file__,os.pardir,os.pardir))
-
-module_line = next(open(os.path.join(DIR, "go.mod"), "r"))
-module_name = re.match(r"module\s+(.+)", module_line).group(1)
-version_prefix=f"{module_name}/internal/version"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+DEFAULT_ARCHES = ["amd64", "arm64"]
 
 
-oss = platform.system().lower()
-if oss not in ["windows", "linux"]:
-    raise SystemExit(f"unknown system {oss}")
-
-is_mingw = False
-try:
-    import sysconfig
-    is_mingw = "mingw" in sysconfig.get_platform().lower()
-except ImportError:
-    pass
-
-arch = platform.machine().lower()
-if arch=='x86_64':
-    arch = "amd64"
-if arch not in ["amd64", "i386"]:
-    raise SystemExit(f"unknown arch {arch}")
-
-print(f"os={oss} arch={arch}")
-
-def co(cmd):
-    o = sp.check_output(cmd)
-    return o.decode("utf-8").strip()
-
-def run(cmd):
-    print(cmd[0])
-    for item in cmd[1:]:
-        print("",item)
-    ret = sp.call(cmd)
-    if ret != 0:
-        raise SystemExit(ret)
-
-built=datetime.datetime.now().isoformat()
-branch = co(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-commit = co(["git", "rev-parse", "HEAD"])
-
-print(f"built={built} branch={branch} commit={commit}")
-
-ext = ""
-ldflags=[
-    "-X", f"{version_prefix}.Built={built}",
-    "-X", f"{version_prefix}.Commit={commit}",
-    "-X", f"{version_prefix}.Branch={branch}",
-]
-ldflags_debug = copy.copy(ldflags)
-ldflags += ["-s", "-w"]
-ldflags_gui = copy.copy(ldflags)
-if oss=="windows" and not is_mingw:
-    ldflags += ["-tags", "timetzdata"]
-    ldflags_gui += ["-H=windowsgui"]
-    ext = ".exe"
-
-os.environ["GOOS"] = oss
-os.environ["GOARCH"] = arch
-ddir = os.path.join(DIR, "dist", oss, arch)
-if not os.path.isdir(ddir):
-    os.makedirs(ddir)
-
-os.chdir(DIR)
-print("go mod tidy")
-run(["go", "mod", "tidy"])
-for target in targets:
-    targetdir = os.path.join(DIR, "cmd", target)
-    os.chdir(targetdir)
-    src = os.path.join(targetdir, target+".go")
-    if not os.path.isfile(src):
-        print(f"source file {src} not found")
-        raise SystemExit(1)
-    binary = os.path.join(ddir, target + ext)
-    winres = os.path.join(targetdir, "winres", "winres.json")
-    is_gui = os.path.isfile(winres)
-    if is_gui:
-        sldflags = " ".join(ldflags_gui)
-    else:
-        sldflags = " ".join(ldflags)
-    cmd = ["go", "build", "-ldflags", sldflags, "-o", binary, src]
-    print(" ".join(cmd))
-    run(cmd)
-    if is_gui and oss=="windows":
-        run(["go-winres", "patch", "--no-backup", binary])
+def module_name() -> str:
+    for line in (ROOT / "go.mod").read_text().splitlines():
+        if line.startswith("module "):
+            return line.split()[1]
+    raise SystemExit("go.mod: no module line")
 
 
-    binary = os.path.join(ddir, target + "_debug" + ext)
-    sldflags = " ".join(ldflags_debug)
-    cmd = ["go", "build", "-ldflags", sldflags, "-o", binary, src]
-    print(" ".join(cmd))
-    run(cmd)
-    if is_gui and oss=="windows":
-        run(["go-winres", "patch", "--no-backup", binary])
+def git(*args: str) -> str:
+    try:
+        return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
+    except (OSError, subprocess.CalledProcessError) as e:
+        raise SystemExit(f"git {' '.join(args)}: {e}")
 
 
+def main(argv: list[str]) -> int:
+    debug = "--debug" in argv
+    arches = [a for a in argv if not a.startswith("--")] or DEFAULT_ARCHES
+
+    version_pkg = f"{module_name()}/internal/version"
+    version = git("describe", "--tags", "--match", "v*", "--always", "--dirty")
+    commit = git("rev-parse", "HEAD")
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"version={version} commit={commit} branch={branch} built={built}")
+
+    ldflags = [
+        f"-X {version_pkg}.Version={version}",
+        f"-X {version_pkg}.Commit={commit}",
+        f"-X {version_pkg}.Branch={branch}",
+        f"-X {version_pkg}.Built={built}",
+    ]
+    if not debug:
+        ldflags += ["-s", "-w"]
+
+    for arch in arches:
+        out = ROOT / "dist" / "linux" / arch / "tea"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, GOOS="linux", GOARCH=arch, CGO_ENABLED="0")
+        cmd = ["go", "build", "-trimpath", "-ldflags", " ".join(ldflags), "-o", str(out), "./cmd/tea"]
+        print(" ".join(cmd))
+        subprocess.check_call(cmd, cwd=ROOT, env=env)
+        print(f"-> {out.relative_to(ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

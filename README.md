@@ -47,16 +47,17 @@ With Go 1.25 or newer:
 go install github.com/nagylzs/tea/cmd/tea@latest
 ```
 
-Or download a binary from the [releases page](https://github.com/nagylzs/tea/releases). Every push to `main` also
-produces a `tea-linux-amd64` artifact on the [CI workflow](https://github.com/nagylzs/tea/actions/workflows/go.yml).
+Or download a binary for amd64 or arm64 from the [releases page](https://github.com/nagylzs/tea/releases); releases
+are built by CI when a `v*` tag is pushed. Every push to `main` also leaves both binaries as artifacts on the
+[CI workflow](https://github.com/nagylzs/tea/actions/workflows/go.yml).
 
 To build from source:
 
 ```sh
 git clone https://github.com/nagylzs/tea.git
 cd tea
-go build -o tea ./cmd/tea          # plain build
-python3 scripts/build.py           # release build with version info -> dist/linux/amd64/tea
+go build -o tea ./cmd/tea          # plain build, "tea dev" in --version
+python3 scripts/build.py           # static release binaries with version info -> dist/linux/{amd64,arm64}/tea
 ```
 
 ## How it works

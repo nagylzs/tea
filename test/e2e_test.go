@@ -198,8 +198,8 @@ func TestHelp(t *testing.T) {
 
 func TestVersion(t *testing.T) {
 	r := runTea(t, "--version")
-	// not built via scripts/build.py, so all three fields are "unset"
-	expect(t, r, "unset unset unset\n", "", 0)
+	// not built via scripts/build.py, so the defaults show
+	expect(t, r, "tea dev (commit unset, branch unset, built unset)\n", "", 0)
 }
 
 func TestListSignals(t *testing.T) {

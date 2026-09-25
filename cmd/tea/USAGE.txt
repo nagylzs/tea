@@ -93,7 +93,7 @@ GLOBAL OPTIONS
         Print this help and exit.
 
     --version
-        Print the build time, branch and commit and exit.
+        Print the version, commit, branch and build time and exit.
 
     -l, --list-signals
         List the available signal names and numbers and exit.

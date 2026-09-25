@@ -1,3 +1,5 @@
+// Package version holds build information injected by scripts/build.py via
+// -ldflags "-X". A plain "go build" leaves the defaults.
 package version
 
 import (
@@ -5,11 +7,15 @@ import (
 	"time"
 )
 
-var Branch string = "unset"
+// Version is the output of "git describe --tags --match 'v*' --always --dirty".
+var Version = "dev"
 
-var Commit string = "unset"
+var Commit = "unset"
 
-var Built string = "unset"
+var Branch = "unset"
+
+// Built is the build time in RFC 3339 format, UTC.
+var Built = "unset"
 
 func BuiltTime() *time.Time {
 	res, err := time.Parse(time.RFC3339, Built)
@@ -20,7 +26,7 @@ func BuiltTime() *time.Time {
 }
 
 func LocalVersion() string {
-	return Built + " " + Branch + " " + Commit
+	return fmt.Sprintf("tea %s (commit %s, branch %s, built %s)", Version, Commit, Branch, Built)
 }
 
 func PrintVersion() {

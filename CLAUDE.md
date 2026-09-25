@@ -18,13 +18,16 @@ an option's name or behaviour must be mirrored there** — it is the only user-f
 ## Commands
 
 ```bash
-go build -o tea cmd/tea/tea.go      # plain build (what CI does)
+go build -o tea ./cmd/tea           # plain build
 go vet ./...
-python3 scripts/build.py            # release build -> dist/<os>/<arch>/tea and tea_debug; runs `go mod tidy`
-                                    # and injects Built/Commit/Branch into internal/version via -ldflags -X
+python3 scripts/build.py [ARCH...]  # static release build -> dist/linux/<arch>/tea (default amd64 arm64); injects
+                                    # Version/Commit/Branch/Built into internal/version via -ldflags -X; --debug keeps symbols
 ./tea --help                        # prints USAGE.txt
-./tea --version                     # "unset unset unset" unless built via scripts/build.py
+./tea --version                     # "tea dev (commit unset, ...)" unless built via scripts/build.py
 ```
+
+CI (`.github/workflows/go.yml`) vets, tests and runs the build script on every push; `release.yml` does the same on a
+`v*` tag and attaches `tea-linux-{amd64,arm64}` plus `SHA256SUMS` to a GitHub release.
 
 ```bash
 go test ./...                       # what CI runs (after go vet); needs python3 and stdbuf on PATH
