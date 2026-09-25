@@ -146,6 +146,33 @@ func TestGlobalOptions(t *testing.T) {
 	})
 }
 
+func TestImplicitFirstCommand(t *testing.T) {
+	t.Run("a command level option starts the first command", func(t *testing.T) {
+		o := mustParse(t, withTail("-p", "x", "-s", "SIGINT")...)
+		if len(o.Commands) != 1 || o.Commands[0].Name != "" || len(o.Commands[0].Conditions.RawPatterns) != 1 {
+			t.Errorf("commands = %+v", o.Commands)
+		}
+	})
+	t.Run("-c after an implicit first command starts the second", func(t *testing.T) {
+		o := mustParse(t, withTail("-p", "x", "-c", "second", "-p", "y")...)
+		if len(o.Commands) != 2 || o.Commands[1].Name != "second" || o.CmdIdx["second"] != 1 {
+			t.Errorf("commands = %+v idx = %v", o.Commands, o.CmdIdx)
+		}
+	})
+	t.Run("global options may follow the implicit command", func(t *testing.T) {
+		o := mustParse(t, "-p", "x", "--no-stdbuf", "--", "true")
+		if len(o.Commands) != 1 || !o.NoStdBuf {
+			t.Errorf("commands = %+v NoStdBuf = %v", o.Commands, o.NoStdBuf)
+		}
+	})
+	t.Run("no command level option at all is still an error", func(t *testing.T) {
+		_, err := parse(t, tail...)
+		if err == nil || !strings.Contains(err.Error(), "at least one command") {
+			t.Errorf("err = %v", err)
+		}
+	})
+}
+
 func TestCommandNames(t *testing.T) {
 	t.Run("named and unnamed commands, CmdIdx", func(t *testing.T) {
 		o := mustParse(t, withTail("-c", "first", "-c", "--command", "third")...)
@@ -397,7 +424,6 @@ func TestParseErrors(t *testing.T) {
 		want string // substring of the error message
 	}{
 		{"unknown option", withTail("--bogus", "-c"), "invalid command"},
-		{"command option before -c", withTail("-p", "x", "-c"), "can only be used inside a --command"},
 		{"no --", []string{"-c"}, "you must specify --"},
 		{"-- without program", []string{"-c", "--"}, "you must specify --"},
 		{"program not found", []string{"--no-stdbuf", "-c", "--", "no-such-program-xyz"}, "not found"},

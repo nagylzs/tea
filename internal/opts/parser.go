@@ -175,10 +175,9 @@ func internalParseArgs() error {
 		}
 		err2 := error(nil)
 
-		if !isGlobalOption(opt) && opt != NewCommand {
-			if cmdIdx < 0 {
-				return fmt.Errorf("%v can only be used inside a --command", arg)
-			}
+		if !isGlobalOption(opt) && opt != NewCommand && cmdIdx < 0 {
+			// the first command is implicit: a command level option starts it
+			addEmptyCommand()
 		}
 		switch opt {
 		case Help:

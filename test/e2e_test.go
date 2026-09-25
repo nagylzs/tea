@@ -224,6 +224,11 @@ func TestPassThrough(t *testing.T) {
 	expect(t, r, "a\nc\n", "b\nd\n", 0)
 }
 
+func TestImplicitFirstCommand(t *testing.T) {
+	r := runTea(t, tea([]string{"-p", "b", "--set-prefix", "> ", "-c", "-p", "a", "--set-suffix", "!\n"}, emit("out:a", "out:b")...)...)
+	expect(t, r, "a!\n> b\n", "", 0)
+}
+
 func TestChildExitCodeIsPropagated(t *testing.T) {
 	r := runTea(t, tea([]string{"-c"}, emit("out:a", "exit:3")...)...)
 	if r.code != 3 || r.stdout != "a\n" {

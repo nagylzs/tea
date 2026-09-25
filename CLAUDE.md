@@ -52,8 +52,9 @@ Not covered because not implemented: `--or-timeout`, `--min-match-time`.
 Two packages:
 
 - `internal/opts` — hand-rolled argument parser (no `flag`/cobra). `parser.go` walks `os.Args` with a global `argIdx`,
-  maps option strings to an `Option` enum, and mutates the package-global `Opts`. Options are either *global* (must
-  appear before any `-c`; see `isGlobalOption`) or *command-level* (mutate `currentCommand()`, the last `-c` started).
+  maps option strings to an `Option` enum, and mutates the package-global `Opts`. Options are either *global* (allowed
+  anywhere; see `isGlobalOption`) or *command-level* (mutate `currentCommand()`, the last `-c` started; the first
+  command-level option before any `-c` starts command #1 implicitly).
   `pop.go` holds the `popXxxArg` helpers that consume the next argv value (durations, signals, colors, names).
   `validate.go` runs after parsing: compiles regexes, builds `Opts.CmdIdx` (name → index) and rejects invalid
   combinations. **New options need entries in the `Option` enum, `longOptions`/`shortOptions`, the `switch` in

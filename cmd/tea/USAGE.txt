@@ -70,7 +70,9 @@ Command level options:
 
 -c|--command [NAME]
 	Start a new command. The optional NAME can be used to reference the command from other commands. Names must not be
-	empty, cannot start with "-" dash and must be unique.
+	empty, cannot start with "-" dash and must be unique. The first command is started implicitly by the first command
+	level option, so -c can be omitted for it (unless you want to name it): "tea -p ready -s SIGINT -- PROGRAM" is
+	the same as "tea -c -p ready -s SIGINT -- PROGRAM".
 
 --disabled
 	Create a command in disabled state. Conditions of a disabled command are not evaluated, and its actions
@@ -261,16 +263,16 @@ Example usages:
 
 Send SIGINT 30 seconds after "phase 2 started" appears in the output, and not before:
 
-tea -c -p "phase 2 started" --enable deadline -c deadline --disabled --timeout 30s -s SIGINT -- command
+tea -p "phase 2 started" --enable deadline -c deadline --disabled --timeout 30s -s SIGINT -- command
 
 Wait until "operation completed" appears in the output of a program, then send SIGINT:
 
-tea -c -p "operation completed" -s SIGINT -- command
+tea -p "operation completed" -s SIGINT -- command
 
 Wait until no new request comes in for at least 10 seconds to an nginx server, then reload its settings.
 While waiting, print a dot character for each incoming request (instead of the full access line):
 
-(tea -c -m . -c --no-input-for 10s --set-exit-code 0 -s SIGINT -- tail -f /var/log/nginx/access.log ) && killall -SIGHUP nginx
+(tea -m . -c --no-input-for 10s --set-exit-code 0 -s SIGINT -- tail -f /var/log/nginx/access.log ) && killall -SIGHUP nginx
 
 Start watching the logs of a PostgreSQL container after it has been started, and wait until
 "ready to accept connections" appears in the logs. If the server does not start up within 120 seconds, then exit with
