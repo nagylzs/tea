@@ -118,11 +118,9 @@ separate command chains (see --share-commands): --enable, --disable and --toggle
 instance, and the --enable, --disable and --toggle actions of a time based command act on both chains.
 
 --no-input-for DURATION
-	Idle condition. Whenever a line appears on stdout or stderr of PROGRAM, the idle time is reset. The condition is
-	true when at least DURATION has elapsed since the last line. Please note that the condition stays true while
-	PROGRAM is silent, so the actions are executed again in every idle second. If you want them to run only once, add
-	an action that disables the command (e.g. -c NAME --no-input-for 10s --disable NAME ...); if you want them to run
-	once per quiet period, combine that with --line-enabled.
+	Idle condition. The condition becomes true when no line has appeared on stdout or stderr of PROGRAM for DURATION.
+	The actions run once per quiet period: after they ran, the command does not fire again until a new line appears
+	and PROGRAM goes quiet for DURATION again. Add --disable NAME (with -c NAME) if it should fire only once overall.
 
 -t|--timeout DURATION
 	Deadline condition. The condition becomes true once DURATION has elapsed since the command was last enabled: for

@@ -91,7 +91,8 @@ command skips timed ones, checks `Disabled`, the stream filter (`Conditions.StdO
 overwriting fields on the `Line`. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
 
 `RunTimers` is a single goroutine, stopped before the child is reaped, that ticks once per second and calls
-`evaluateTimers`: `--no-input-for` fires on every tick while `now - max(lastLine)` is at least the duration;
+`evaluateTimers`: `--no-input-for` fires once when `now - max(lastLine)` reaches the duration (`Fired`, cleared by
+`processLine` when a line arrives);
 `--timeout` fires once when `now - Started` reaches the duration, then sets `Fired`. `setDisabled` is the only way
 state changes: enabling a disabled command resets `Started` and `Fired`, which is what makes a `--timeout` count
 from the last enable. Timed commands' state-changing actions go to every chain (`targets` dedupes the shared

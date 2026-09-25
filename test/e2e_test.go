@@ -827,13 +827,13 @@ func TestNoInputForBetweenLines(t *testing.T) {
 	expect(t, r, "a\nb\n", "", 42)
 }
 
-func TestNoInputForRepeatsEveryIdleSecond(t *testing.T) {
-	// without a self-disable the command fires repeatedly; count via toggling a marker command
+func TestNoInputForFiresOncePerQuietPeriod(t *testing.T) {
+	// count firings by toggling a marker command
 	r := runTea(t, tea([]string{"-c", "--no-input-for", "500ms", "--toggle", "x", "-c", "x", "--disabled", "--set-prefix", "> "},
 		emit("out:a", "sleep:1.5", "out:b", "sleep:2.5", "out:c")...)...)
-	// the idle timer ticks once per second: one tick in the 1.5s pause (x on -> "> b"),
-	// two ticks in the 2.5s pause (x off, then on again -> "> c")
-	expect(t, r, "a\n> b\n> c\n", "", 0)
+	// once in the 1.5s pause (x on -> "> b") and once in the 2.5s pause (x off ->
+	// "c"), even though the second pause spans two timer ticks
+	expect(t, r, "a\n> b\nc\n", "", 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -1063,13 +1063,26 @@ func TestLineBufferSize(t *testing.T) {
 }
 
 func TestStdbufWrapping(t *testing.T) {
-	// a glibc stdio program (printf via sh) writing to a pipe would normally
-	// block-buffer; with stdbuf line buffering the lines arrive one by one,
-	// so the signal sent on the first line stops the program before the second.
-	r := runTea(t, "-c", "-p", "first", "-s", "SIGKILL", "--", "sh", "-c", "printf 'first\\n'; sleep 5; printf 'second\\n'")
-	if r.stdout != "first\n" || r.took > 4*time.Second {
-		t.Errorf("stdout=%q took=%v", r.stdout, r.took)
-	}
+	// GNU grep uses stdio and block-buffers its output when stdout is a pipe.
+	// It reads tea's forwarded stdin, which stays open, so the only way its
+	// match reaches tea before it exits is stdbuf's line buffering.
+	t.Run("stdbuf makes a glibc program line-buffered", func(t *testing.T) {
+		r := runTeaStdin(t, stdinDataOpen("first\n"), "-p", "^first$", "-s", "SIGKILL", "--", "grep", "first")
+		if r.stdout != "first\n" || r.code != 255 {
+			t.Errorf("stdout=%q code=%d stderr=%q", r.stdout, r.code, r.stderr)
+		}
+		if r.took > 3*time.Second {
+			t.Errorf("took %v, the match should have arrived at once", r.took)
+		}
+	})
+	t.Run("--no-stdbuf leaves the program's own buffering", func(t *testing.T) {
+		// the match stays in grep's buffer, so the deadline fires and the buffer is lost
+		r := runTeaStdin(t, stdinDataOpen("first\n"), "--no-stdbuf", "-p", "^first$", "-s", "SIGKILL",
+			"-c", "-t", "500ms", "-s", "SIGKILL", "-e", "3", "--", "grep", "first")
+		if r.stdout != "" || r.code != 3 {
+			t.Errorf("stdout=%q code=%d stderr=%q", r.stdout, r.code, r.stderr)
+		}
+	})
 	t.Run("--no-stdbuf runs the program directly", func(t *testing.T) {
 		r := runTea(t, "--no-stdbuf", "-c", "--", "sh", "-c", "echo $0")
 		if strings.Contains(r.stdout, "stdbuf") || r.code != 0 {

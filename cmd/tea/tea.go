@@ -447,8 +447,9 @@ func evaluateTimers(chains []Chain, cmdIndices map[string]int, chStdInIn chan st
 		}
 		c := cmd.Conditions
 		fire := false
-		if c.NoInputFor != nil && idle >= *c.NoInputFor {
-			// stays true while idle: fires on every tick unless it disables itself
+		if c.NoInputFor != nil && !cmd.Fired && idle >= *c.NoInputFor {
+			// fires once per quiet period: Fired is cleared when a line arrives
+			cmd.Fired = true
 			fire = true
 		}
 		if c.Timeout != nil && !cmd.Fired && now.Sub(cmd.Started) >= *c.Timeout {
@@ -573,6 +574,12 @@ func processLine(chain Chain, cmdIndices map[string]int, chStdInIn chan stdInReq
 		stream = 1
 	}
 	lastLine[stream] = time.Now()
+	// a new line ends the quiet period: re-arm the idle commands
+	for _, cmd := range chain {
+		if cmd.Conditions.NoInputFor != nil {
+			cmd.Fired = false
+		}
+	}
 
 	// Perform LineEnabled / LineDisabled at the beginning of the line
 	for _, cmd := range chain {
