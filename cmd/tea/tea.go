@@ -76,6 +76,9 @@ func main() {
 		os.Exit(0)
 	}
 
+	if o.StdBufMissing {
+		log.Printf("warning: stdbuf not found, starting PROGRAM directly; its output may be block-buffered (see --no-stdbuf in --help)")
+	}
 	cmd := exec.Command(o.Program, o.ProgramArgs...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -2,6 +2,7 @@ package opts
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -86,6 +87,21 @@ func TestProgramAndArgs(t *testing.T) {
 		}
 		if len(o.ProgramArgs) != 1 || o.ProgramArgs[0] != "x" {
 			t.Errorf("ProgramArgs = %q", o.ProgramArgs)
+		}
+	})
+	t.Run("missing stdbuf falls back to a direct start", func(t *testing.T) {
+		tru, err := exec.LookPath("true")
+		if err != nil {
+			t.Skip("no true(1)")
+		}
+		t.Setenv("PATH", t.TempDir()) // nothing on PATH, so stdbuf cannot be found
+		o := mustParse(t, "-c", "--", tru, "x")
+		if !o.StdBufMissing || o.Program != tru || len(o.ProgramArgs) != 1 || o.ProgramArgs[0] != "x" {
+			t.Errorf("StdBufMissing=%v Program=%q ProgramArgs=%q", o.StdBufMissing, o.Program, o.ProgramArgs)
+		}
+		o = mustParse(t, "--no-stdbuf", "-c", "--", tru)
+		if o.StdBufMissing {
+			t.Errorf("StdBufMissing set although --no-stdbuf was given")
 		}
 	})
 	t.Run("--no-stdbuf without args gives an empty arg list", func(t *testing.T) {

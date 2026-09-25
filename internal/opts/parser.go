@@ -18,6 +18,7 @@ type Type struct {
 	PidFile        string
 	LineBufferSize int
 	NoStdBuf       bool
+	StdBufMissing  bool // stdbuf was wanted but is not on PATH; PROGRAM is started directly
 	NoStdIn        bool
 	StopSignal     syscall.Signal
 	Deadline       *time.Duration
@@ -333,11 +334,12 @@ func internalParseArgs() error {
 		} else {
 			Opts.ProgramArgs = make([]string, 0)
 		}
+	} else if stdbuf, err := exec.LookPath("stdbuf"); err != nil {
+		// no coreutils (busybox, Alpine...): start PROGRAM directly, main() warns once
+		Opts.StdBufMissing = true
+		Opts.Program = prg
+		Opts.ProgramArgs = append([]string{}, tail[1:]...)
 	} else {
-		stdbuf, err := exec.LookPath("stdbuf")
-		if err != nil {
-			return fmt.Errorf("stdbuf not found: %v", err)
-		}
 		Opts.Program = stdbuf
 		Opts.ProgramArgs = append([]string{"-oL", "-eL", prg}, tail[1:]...)
 	}

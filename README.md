@@ -39,7 +39,8 @@ nothing to do with terminals. `tea` covers the common cases in one line, with a 
 
 ## Install
 
-Linux only: `tea` uses Linux signals and `stdbuf` from GNU coreutils.
+Linux only. `tea` is a single static binary; it uses `stdbuf` from GNU coreutils when it is installed (see
+[Buffering](#how-it-works) below) and warns and runs the program directly when it is not.
 
 With Go 1.25 or newer:
 

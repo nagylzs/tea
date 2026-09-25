@@ -60,7 +60,8 @@ DESCRIPTION
         error. stdbuf replaces itself with PROGRAM (same process id) after setting the environment, so nothing else
         changes. It has no effect on statically linked programs, on setuid programs, on programs that set their own
         buffering, and on programs that do not use glibc (for example Alpine/musl binaries); use --no-stdbuf if
-        stdbuf itself causes trouble (it prints a warning when its helper library cannot be loaded).
+        stdbuf itself causes trouble (it prints a warning when its helper library cannot be loaded). If stdbuf is
+        not installed at all, tea starts PROGRAM directly and prints a warning.
     Python
         Ignores stdbuf and block-buffers standard output when it is a pipe. Start it as "python3 -u ..." or set
         PYTHONUNBUFFERED=1. Standard error is line-buffered on recent versions.
@@ -107,7 +108,8 @@ GLOBAL OPTIONS
         error.
 
     --no-stdbuf
-        Start PROGRAM directly instead of through stdbuf(1). See "Output buffering" above.
+        Start PROGRAM directly instead of through stdbuf(1). See "Output buffering" above. This also silences the
+        warning that tea prints when stdbuf is not installed.
 
     --no-stdin
         Do not read tea's own standard input. PROGRAM's standard input is then written only by --send-input and

@@ -82,10 +82,17 @@ func runTea(t *testing.T, args ...string) result {
 // cannot be started or does not finish within 20 seconds.
 func runTeaStdin(t *testing.T, in stdinSpec, args ...string) result {
 	t.Helper()
+	return runTeaEnv(t, in, nil, args...)
+}
+
+// runTeaEnv is runTeaStdin with an explicit environment (nil = inherit).
+func runTeaEnv(t *testing.T, in stdinSpec, env []string, args ...string) result {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, teaBin, args...)
 	cmd.Dir = testDir
+	cmd.Env = env
 	var so, se bytes.Buffer
 	cmd.Stdout = &so
 	cmd.Stderr = &se
@@ -1174,6 +1181,19 @@ func TestStdbufWrapping(t *testing.T) {
 		if r.stdout != "" || r.code != 3 {
 			t.Errorf("stdout=%q code=%d stderr=%q", r.stdout, r.code, r.stderr)
 		}
+	})
+	t.Run("missing stdbuf warns and runs the program directly", func(t *testing.T) {
+		py, err := exec.LookPath("python3")
+		if err != nil {
+			t.Fatal(err)
+		}
+		env := []string{"PATH=" + t.TempDir(), "PYTHONUNBUFFERED=1"}
+		r := runTeaEnv(t, stdinOpen, env, "-p", "b", "--set-prefix", "> ", "--", py, "emit.py", "out:a", "out:b")
+		if r.stdout != "a\n> b\n" || r.code != 0 || !strings.Contains(r.stderr, "stdbuf not found") {
+			t.Errorf("stdout=%q stderr=%q code=%d", r.stdout, r.stderr, r.code)
+		}
+		r = runTeaEnv(t, stdinOpen, env, "--no-stdbuf", "-c", "--", py, "emit.py", "out:a")
+		expect(t, r, "a\n", "", 0)
 	})
 	t.Run("--no-stdbuf runs the program directly", func(t *testing.T) {
 		r := runTea(t, "--no-stdbuf", "-c", "--", "sh", "-c", "echo $0")
