@@ -102,7 +102,12 @@ func popSignalPArg(name string) (*syscall.Signal, error) {
 	if err != nil {
 		return nil, err
 	}
-	signal := unix.SignalNum(strings.ToUpper(s))
+	upper := strings.ToUpper(s)
+	signal := unix.SignalNum(upper)
+	if signal == 0 && !strings.HasPrefix(upper, "SIG") {
+		// accept TERM, int, Usr1 ... as well as SIGTERM
+		signal = unix.SignalNum("SIG" + upper)
+	}
 	if signal != 0 {
 		return &signal, nil
 	}

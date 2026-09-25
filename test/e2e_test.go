@@ -640,6 +640,11 @@ func TestSignalByName(t *testing.T) {
 	expect(t, r, "ready\ngot SIGUSR1\ngot SIGTERM\n", "", 0)
 }
 
+func TestSignalWithoutPrefix(t *testing.T) {
+	r := runTea(t, tea([]string{"-p", "^ready$", "-s", "usr1", "-c", "-p", "got SIGUSR1", "-s", "TERM"}, "signals.py")...)
+	expect(t, r, "ready\ngot SIGUSR1\ngot SIGTERM\n", "", 0)
+}
+
 func TestSignalByNumber(t *testing.T) {
 	r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-s", "12", "-c", "-p", "got SIGUSR2", "-s", "15"},
 		"signals.py")...)

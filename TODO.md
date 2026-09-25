@@ -2,10 +2,12 @@
 
 ## Ergonomics
 
-- [ ] The command-chain grammar is dense. Consider first-class shortcuts for the three most common uses:
-  - wait for pattern, then signal (`tea -c -p PATTERN -s SIG -- ...`)
-  - wait for pattern with a deadline, non-zero exit if it doesn't appear
-  - quiet-for-N-seconds, then act (`-c NAME --no-input-for 10s --disable NAME`)
+- [x] The command-chain grammar is dense. Done: the first command is implicit (no `-c`), `--no-input-for` fires
+  once per quiet period (no self-disable dance), `--exit CODE` replaces `-s SIG -e CODE`, `--deadline D` replaces the
+  trailing `-c -t D --exit 1` command, and signal names work without the `SIG` prefix. The three common uses are now:
+  - `tea -p PATTERN -s INT -- ...`
+  - `tea -p PATTERN --exit 0 --deadline 120s -- ...`
+  - `tea --no-input-for 10s --exit 0 -- ...`
 - [ ] Document per-runtime output buffering in USAGE.txt. `stdbuf` only affects glibc stdio; Java, Go, Node,
   and Python (without `-u` / `PYTHONUNBUFFERED`) ignore it.
 

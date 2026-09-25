@@ -381,6 +381,10 @@ func TestSignalParsing(t *testing.T) {
 		{"SIGTERM", syscall.SIGTERM},
 		{"sigterm", syscall.SIGTERM},
 		{"SigUsr2", syscall.SIGUSR2},
+		{"TERM", syscall.SIGTERM},
+		{"int", syscall.SIGINT},
+		{"Usr1", syscall.SIGUSR1},
+		{"KILL", syscall.SIGKILL},
 		{"15", syscall.SIGTERM},
 		{"2", syscall.SIGINT},
 	}
@@ -521,7 +525,6 @@ func TestParseErrors(t *testing.T) {
 		{"--exit with -s", withTail("-c", "-x", "0", "-s", "SIGINT"), "--exit cannot be combined"},
 		{"--stop-signal invalid", withTail("--stop-signal", "SIGNOPE", "-c"), "signal name or a signal number"},
 		{"unknown signal name", withTail("-c", "-s", "SIGNOPE"), "signal name or a signal number"},
-		{"signal without SIG prefix", withTail("-c", "-s", "TERM"), "signal name or a signal number"},
 		{"invalid signal number", withTail("-c", "-s", "999"), "invalid signal number"},
 		{"invalid fg color", withTail("-c", "--fg-color", "pink"), "invalid color name"},
 		{"invalid bg color", withTail("-c", "--bg-color", "pink"), "invalid color name"},

@@ -226,9 +226,9 @@ Input manipulation actions:
 Exit code and signaling actions:
 
 -s|--signal SIGNAL
-	Send the given signal to PROGRAM. The signal can be given with a number, or the name of the signal (case-insensitive
-	). Please note, if multiple commands match, then multiple signals are sent in their specified order (as long as
-	PROGRAM is still an active process).
+	Send the given signal to PROGRAM. The signal can be given with a number, or with its name, case-insensitive, with
+	or without the SIG prefix (SIGTERM, TERM and term all work; see --list-signals). Please note, if multiple commands
+	match, then multiple signals are sent in their specified order (as long as PROGRAM is still an active process).
 
 -e|--set-exit-code EXIT_CODE
 	By default, tea will read the exit code of PROGRAM and use that as its own exit code. The --set-exit-code action
