@@ -172,8 +172,8 @@ func main() {
 			go ProcessLines(&o.Commands, o.CmdIdx, chStdInIn, chIn, chStdOutOut, chStdErrOut, &wgProc)
 		} else {
 			// Process stdin and stdout with different command chain instances
-			cmdStdOut := o.Commands
-			cmdStdErr := o.Commands
+			cmdStdOut := opts.CloneCommands(o.Commands)
+			cmdStdErr := opts.CloneCommands(o.Commands)
 			wgProc.Add(2)
 			go ProcessLines(&cmdStdOut, o.CmdIdx, chStdInIn, chStdOutIn, chStdOutOut, chStdErrOut, &wgProc)
 			go ProcessLines(&cmdStdErr, o.CmdIdx, chStdInIn, chStdErrIn, chStdOutOut, chStdErrOut, &wgProc)
@@ -274,6 +274,77 @@ ForLoop:
 	wgProc.Done()
 }
 
+// applyActions performs the non-line-specific actions of a command: signals, stdin
+// input, exit code overrides, --disable/--enable/--toggle, --next-line and --skip-to.
+// It is shared by processLine and processTimedCommands. cmdIdx is the index of the
+// *next* command to evaluate and is rewritten by --skip-to. closeStdIn is set when
+// --close-stdin is requested; the caller closes the pipe after the loop. It returns
+// true when the caller must stop evaluating further commands (--next-line).
+func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, a *opts.CommandActions, cmdIdx *int, closeStdIn *bool) bool {
+	if a.Signal != nil {
+		if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	if a.Input != nil {
+		chStdInIn <- *a.Input
+	}
+
+	if a.InputFile != nil {
+		log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
+	}
+
+	if a.CloseStdIn {
+		*closeStdIn = true
+	}
+
+	if a.SetExitCode != nil {
+		m.FixedExitCode.Store(*a.SetExitCode)
+	}
+
+	if a.ClearExitCode {
+		m.FixedExitCode.Store(-1)
+	}
+
+	for _, n := range a.Disable {
+		i, ok := cmdIndices[n]
+		if !ok {
+			log.Fatal(fmt.Errorf("internal error: --disable references to non-existent command %v", n))
+		}
+		(*commands)[i].Disabled = true
+	}
+
+	for _, n := range a.Enable {
+		i, ok := cmdIndices[n]
+		if !ok {
+			log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
+		}
+		(*commands)[i].Disabled = false
+	}
+
+	for _, n := range a.Toggle {
+		i, ok := cmdIndices[n]
+		if !ok {
+			log.Fatal(fmt.Errorf("internal error: --toggle references to non-existent command %v", n))
+		}
+		(*commands)[i].Disabled = !(*commands)[i].Disabled
+	}
+
+	if a.NextLine {
+		return true
+	}
+
+	if a.SkipTo != nil {
+		i, ok := cmdIndices[*a.SkipTo]
+		if !ok {
+			log.Fatal(fmt.Errorf("internal error: --skip-to references to non-existent command %v", *a.SkipTo))
+		}
+		*cmdIdx = i
+	}
+	return false
+}
+
 func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, lastLineArrived time.Time, chStdInIn chan string, chStdOutOut chan string) {
 	// go over all commands
 	cmdIdx := 0
@@ -282,7 +353,7 @@ func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, l
 
 		// eval conditions
 
-		cmd := (*commands)[cmdIdx]
+		cmd := &(*commands)[cmdIdx]
 		cmdIdx++
 
 		if cmd.Disabled { // skip disabled commands
@@ -300,71 +371,9 @@ func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, l
 		}
 
 		// process actions
-		a := cmd.Actions
-
-		if a.Signal != nil {
-			if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
-				log.Fatal(err)
-			}
-		}
-
-		if a.Input != nil {
-			chStdInIn <- *a.Input
-		}
-
-		if a.InputFile != nil {
-			log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
-		}
-
-		if a.CloseStdIn {
-			closeStdIn = true
-		}
-
-		if a.SetExitCode != nil {
-			m.FixedExitCode.Store(*a.SetExitCode)
-		}
-
-		if a.ClearExitCode {
-			m.FixedExitCode.Store(-1)
-		}
-
-		for _, n := range a.Disable {
-			i, ok := cmdIndices[n]
-			if !ok {
-				log.Fatal(fmt.Errorf("inernal error: --disable references to non-existent command %v", n))
-			}
-			(*commands)[i].Disabled = true
-		}
-
-		for _, n := range a.Enable {
-			i, ok := cmdIndices[n]
-			if !ok {
-				log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
-			}
-			(*commands)[i].Disabled = false
-		}
-
-		for _, n := range a.Toggle {
-			i, ok := cmdIndices[n]
-			if !ok {
-				log.Fatal(fmt.Errorf("inernal error: --toggle references to non-existent command %v", n))
-			}
-			(*commands)[i].Disabled = !(*commands)[i].Disabled
-		}
-
-		if a.NextLine {
+		if applyActions(commands, cmdIndices, chStdInIn, cmd.Actions, &cmdIdx, &closeStdIn) {
 			break
 		}
-
-		if a.SkipTo != nil {
-			i, ok := cmdIndices[*a.SkipTo]
-			if !ok {
-				log.Fatal(fmt.Errorf("inernal error: --skip-to references to non-existent command %v", a.SkipTo))
-			}
-			cmdIdx = i
-			continue
-		}
-
 	}
 
 	if closeStdIn {
@@ -377,7 +386,8 @@ func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, l
 
 func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, line Line, chStdErrOut chan string, chStdOutOut chan string) {
 	// Perform LineEnabled / LineDisabled at the beginning of the line
-	for _, cmd := range *commands {
+	for i := range *commands {
+		cmd := &(*commands)[i]
 		if cmd.LineEnabled {
 			cmd.Disabled = false
 		} else if cmd.LineDisabled {
@@ -392,7 +402,7 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 
 		// eval conditions
 
-		cmd := (*commands)[cmdIdx]
+		cmd := &(*commands)[cmdIdx]
 		cmdIdx++
 
 		// --no-input-for-duration is not used in line processing, it is a timed command
@@ -410,7 +420,7 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 			continue
 		}
 		// pattern matching
-		if !commandLineMatch(&line, &cmd) {
+		if !commandLineMatch(&line, cmd) {
 			continue
 		}
 		/* TODO: process time based conditions
@@ -440,7 +450,7 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 
 		*/
 
-		// process actions
+		// process line-specific actions ("last one wins")
 		a := cmd.Actions
 		if a.MarkStdOut != nil {
 			line.MarkStdOut = a.MarkStdOut
@@ -464,69 +474,10 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 			clr = a.Color
 		}
 
-		if a.Signal != nil {
-			if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
-				log.Fatal(err)
-			}
-		}
-
-		if a.Input != nil {
-			chStdInIn <- *a.Input
-		}
-
-		if a.InputFile != nil {
-			log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
-		}
-
-		if a.CloseStdIn {
-			closeStdIn = true
-		}
-
-		if a.SetExitCode != nil {
-			m.FixedExitCode.Store(*a.SetExitCode)
-		}
-
-		if a.ClearExitCode {
-			m.FixedExitCode.Store(-1)
-		}
-
-		for _, n := range a.Disable {
-			i, ok := cmdIndices[n]
-			if !ok {
-				log.Fatal(fmt.Errorf("inernal error: --disable references to non-existent command %v", n))
-			}
-			(*commands)[i].Disabled = true
-		}
-
-		for _, n := range a.Enable {
-			i, ok := cmdIndices[n]
-			if !ok {
-				log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
-			}
-			(*commands)[i].Disabled = false
-		}
-
-		for _, n := range a.Toggle {
-			i, ok := cmdIndices[n]
-			if !ok {
-				log.Fatal(fmt.Errorf("inernal error: --toggle references to non-existent command %v", n))
-			}
-			(*commands)[i].Disabled = !(*commands)[i].Disabled
-		}
-
-		if a.NextLine {
+		// process shared actions
+		if applyActions(commands, cmdIndices, chStdInIn, a, &cmdIdx, &closeStdIn) {
 			break
 		}
-
-		if a.SkipTo != nil {
-			i, ok := cmdIndices[*a.SkipTo]
-			if !ok {
-				log.Fatal(fmt.Errorf("inernal error: --skip-to references to non-existent command %v", a.SkipTo))
-			}
-			cmdIdx = i
-			continue
-		}
-
 	}
 
 	if closeStdIn {
@@ -542,31 +493,25 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 		format = clr.SprintfFunc()
 	}
 
+	var out chan string
+	var mark *string
 	if line.OutStdErr {
-		if line.MarkStdErr != nil {
-			chStdErrOut <- format(*line.MarkStdErr)
-		} else {
-			if line.Prefix != nil {
-				chStdErrOut <- format(*line.Prefix)
-			}
-			chStdErrOut <- line.Value
-			if line.Suffix != nil {
-				chStdErrOut <- format(*line.Suffix)
-			}
-		}
+		out = chStdErrOut
+		mark = line.MarkStdErr
 	} else {
-		if line.MarkStdOut != nil {
-			chStdOutOut <- format(*line.MarkStdOut)
-		} else {
-			if line.Prefix != nil {
-				chStdOutOut <- format(*line.Prefix)
-			}
-			chStdOutOut <- format(line.Value)
-			if line.Suffix != nil {
-				chStdOutOut <- format(*line.Suffix)
-			}
+		out = chStdOutOut
+		mark = line.MarkStdOut
+	}
+	if mark != nil {
+		out <- format(*mark)
+	} else {
+		if line.Prefix != nil {
+			out <- format(*line.Prefix)
 		}
-
+		out <- format(line.Value)
+		if line.Suffix != nil {
+			out <- format(*line.Suffix)
+		}
 	}
 }
 

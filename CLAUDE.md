@@ -54,16 +54,12 @@ command chain → `WriteData` goroutines write strings to tea's own stdout/stder
 
 The three stream modes differ only in how channels are wired in `main()`:
 
-- **default**: two `ProcessLines` goroutines, one per stream, each given what is *intended* to be its own copy of
-  the `[]opts.Command` chain (`cmdStdOut := o.Commands` / `cmdStdErr := o.Commands`) so that
-  `--disable`/`--enable`/`--toggle` state is independent per stream (as USAGE.txt promises). `FixedExitCode`
-  (an `atomic.Int32`, `-1` = "use child's exit code") is deliberately shared.
+- **default**: two `ProcessLines` goroutines, one per stream, each given its own deep copy of the
+  `[]opts.Command` chain (`opts.CloneCommands`) so that `--disable`/`--enable`/`--toggle` state is independent per
+  stream (as USAGE.txt promises). `FixedExitCode` (an `atomic.Int32`, `-1` = "use child's exit code") is
+  deliberately shared.
 - `--share-commands`: stdout and stderr lines are merged into one channel and processed by one chain.
 - `--share-streams`: both pipes are read into the stdout channel; every line looks like stdout.
-
-Caveat: those "copies" are slice-header copies sharing one backing array, and `Command.Actions`/`Conditions` are
-pointers, so in practice the two chains mutate the same `Disabled` flags and the same structs. Anything relying on
-per-stream isolation needs a real deep copy.
 
 ### Command evaluation
 
@@ -72,9 +68,11 @@ per-stream isolation needs a real deep copy.
 actions. "Last one wins" semantics for mark/prefix/suffix/color come from simply overwriting fields on the `Line` as
 commands run. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
 
-`processTimedCommands` is a near-duplicate of the action section of `processLine`, driven by a 1-second idle timer in
-`ProcessLines`. It only handles `--no-input-for-duration` (patternless, "no current line" commands). If you add a new
-action, add it to **both** functions.
+`processTimedCommands` is driven by a 1-second idle timer in `ProcessLines` and only handles
+`--no-input-for-duration` (patternless, "no current line" commands). Both it and `processLine` call the shared
+`applyActions` for every action that does not touch the current line (signal, stdin, exit code, enable/disable/toggle,
+`--next-line`, `--skip-to`). Line-specific actions (mark/prefix/suffix/color/send-to) live only in `processLine`. A new
+action goes in `applyActions` unless it needs the `Line`.
 
 `--timeout`, `--or-timeout`, `--min-match-time` are parsed and rejected in `validate.go` as not implemented; a design
 sketch for them is in the big comment inside `processLine`. `--send-input-file` parses but `log.Fatal`s at runtime.

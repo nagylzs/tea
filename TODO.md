@@ -20,10 +20,11 @@
 
 ## Correctness
 
-- [ ] Per-stream command "copies" (`cmdStdOut := o.Commands` / `cmdStdErr := o.Commands`) are slice-header copies
-  sharing one backing array, and `Actions`/`Conditions` are pointers. `--disable`/`--enable`/`--toggle` state is
-  therefore shared between stdout and stderr chains, contrary to what USAGE.txt promises. Needs a deep copy.
-- [ ] `processTimedCommands` duplicates the action section of `processLine`; extract a shared `applyActions`.
+- [x] Per-stream command "copies" were slice-header copies sharing one backing array, so `--disable`/`--enable`/
+  `--toggle` state leaked between the stdout and stderr chains. Fixed: `opts.CloneCommands` deep-copies the chain.
+- [x] `processTimedCommands` duplicated the action section of `processLine`. Fixed: shared `applyActions`.
+- [x] `--line-enabled`/`--line-disabled` ranged over struct copies, so the per-line reset never took effect.
+- [x] Color was not applied to the line value when writing to stderr (USAGE.txt promises both streams).
 
 ## Tests
 
