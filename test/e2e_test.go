@@ -390,6 +390,29 @@ func TestPrefixAndSuffix(t *testing.T) {
 	})
 }
 
+func TestLinesAreWrittenAtomically(t *testing.T) {
+	// Both streams are merged into one pipe. With prefix, value and suffix
+	// written separately, a stderr prefix could land inside a stdout line.
+	tokens := make([]string, 0, 400)
+	for i := 0; i < 200; i++ {
+		tokens = append(tokens, "out:o", "err:e")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, teaBin, tea([]string{"-a", "--set-prefix", "[", "--set-suffix", "]\n"}, emit(tokens...)...)...)
+	cmd.Dir = testDir
+	var merged bytes.Buffer
+	cmd.Stdout = &merged
+	cmd.Stderr = &merged
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("tea: %v\n%s", err, merged.String())
+	}
+	got := sorted(merged.String())
+	if len(got) != 400 || got[0] != "[e]" || got[199] != "[e]" || got[200] != "[o]" || got[399] != "[o]" {
+		t.Errorf("lines were interleaved: %d lines, first %q, last %q", len(got), got[0], got[len(got)-1])
+	}
+}
+
 func TestSendTo(t *testing.T) {
 	t.Run("--send-to-stderr", func(t *testing.T) {
 		r := runTea(t, tea([]string{"-c", "-p", "b", "--send-to-stderr"}, emit("out:a", "out:b")...)...)

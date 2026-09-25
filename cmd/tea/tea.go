@@ -674,20 +674,25 @@ func processLine(chain Chain, cmdIndices map[string]int, chStdInIn chan stdInReq
 		format = clr.SprintfFunc()
 	}
 
-	out := chStdOutOut
-	if line.OutStdErr {
-		out = chStdErrOut
-	}
+	// Build the whole output line first and hand it over in one piece, so that
+	// one write(2) carries it: with stdout and stderr on the same terminal, the
+	// two writer goroutines can then interleave lines but never parts of lines.
+	var text string
 	if line.Mark != nil {
-		out <- format(*line.Mark)
+		text = format(*line.Mark)
 	} else {
 		if line.Prefix != nil {
-			out <- format(*line.Prefix)
+			text += format(*line.Prefix)
 		}
-		out <- format(line.Value)
+		text += format(line.Value)
 		if line.Suffix != nil {
-			out <- format(*line.Suffix)
+			text += format(*line.Suffix)
 		}
+	}
+	if line.OutStdErr {
+		chStdErrOut <- text
+	} else {
+		chStdOutOut <- text
 	}
 }
 
