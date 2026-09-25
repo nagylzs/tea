@@ -56,7 +56,7 @@ const (
 	AndTimeout
 	OrTimeout
 	MinMatchTime
-	NoInputForDuration
+	NoInputFor
 	MarkStdout
 	MarkStdErr
 	SetPrefix
@@ -100,52 +100,52 @@ var shortOptions = map[string]Option{
 }
 
 var longOptions = map[string]Option{
-	"--help":                  Help,
-	"--version":               ShowVersion,
-	"--list-signals":          ListSignals,
-	"--pid":                   PID,
-	"--line-buffer-size":      LineBufferSize,
-	"--no-stdbuf":             NoStdBuf,
-	"--share-commands":        ShareCommands,
-	"--share-streams":         ShareStreams,
-	"--command":               NewCommand,
-	"--disabled":              Disabled,
-	"--line-disabled":         LineDisabled,
-	"--line-enabled":          LineEnabled,
-	"--pattern":               Pattern,
-	"--or":                    Or,
-	"--no":                    No,
-	"--std-err":               StdErr,
-	"--std-all":               StdAll,
-	"--timeout":               AndTimeout,
-	"--or-timeout":            OrTimeout,
-	"--min-match-time":        MinMatchTime,
-	"--no-input-for-duration": NoInputForDuration,
-	"--mark":                  MarkStdout,
-	"--mark-stderr":           MarkStdErr,
-	"--set-prefix":            SetPrefix,
-	"--set-suffix":            SetSuffix,
-	"--fg-color":              FgColor,
-	"--bg-color":              BgColor,
-	"--underline":             Underline,
-	"--bold":                  Bold,
-	"--faint":                 Faint,
-	"--italic":                Italic,
-	"--blink":                 BlinkSlow,
-	"--blink-rapid":           BlinkRapid,
-	"--send-to-stdout":        SendToStdOut,
-	"--send-to-stderr":        SendToStdErr,
-	"--next-line":             Next,
-	"--skip-to":               SkipTo,
-	"--disable":               Disable,
-	"--enable":                Enable,
-	"--toggle":                Toggle,
-	"--signal":                Signal,
-	"--send-input":            SendInput,
-	"--send-input-file":       SendInputFile,
-	"--close":                 CloseStdin,
-	"--set-exit-code":         SetExitCode,
-	"--clear-exit-code":       ClearExitCode,
+	"--help":             Help,
+	"--version":          ShowVersion,
+	"--list-signals":     ListSignals,
+	"--pid":              PID,
+	"--line-buffer-size": LineBufferSize,
+	"--no-stdbuf":        NoStdBuf,
+	"--share-commands":   ShareCommands,
+	"--share-streams":    ShareStreams,
+	"--command":          NewCommand,
+	"--disabled":         Disabled,
+	"--line-disabled":    LineDisabled,
+	"--line-enabled":     LineEnabled,
+	"--pattern":          Pattern,
+	"--or":               Or,
+	"--no":               No,
+	"--std-err":          StdErr,
+	"--std-all":          StdAll,
+	"--timeout":          AndTimeout,
+	"--or-timeout":       OrTimeout,
+	"--min-match-time":   MinMatchTime,
+	"--no-input-for":     NoInputFor,
+	"--mark":             MarkStdout,
+	"--mark-stderr":      MarkStdErr,
+	"--set-prefix":       SetPrefix,
+	"--set-suffix":       SetSuffix,
+	"--fg-color":         FgColor,
+	"--bg-color":         BgColor,
+	"--underline":        Underline,
+	"--bold":             Bold,
+	"--faint":            Faint,
+	"--italic":           Italic,
+	"--blink":            BlinkSlow,
+	"--blink-rapid":      BlinkRapid,
+	"--send-to-stdout":   SendToStdOut,
+	"--send-to-stderr":   SendToStdErr,
+	"--next-line":        Next,
+	"--skip-to":          SkipTo,
+	"--disable":          Disable,
+	"--enable":           Enable,
+	"--toggle":           Toggle,
+	"--signal":           Signal,
+	"--send-input":       SendInput,
+	"--send-input-file":  SendInputFile,
+	"--close":            CloseStdin,
+	"--set-exit-code":    SetExitCode,
+	"--clear-exit-code":  ClearExitCode,
 }
 
 func internalParseArgs() error {
@@ -224,8 +224,8 @@ func internalParseArgs() error {
 			currentConditions().OrTimeout, err2 = popDurationArg(arg)
 		case MinMatchTime:
 			currentConditions().MinMatchTime, err2 = popDurationArg(arg)
-		case NoInputForDuration:
-			currentConditions().NoInputForDuration, err2 = popDurationArg(arg)
+		case NoInputFor:
+			currentConditions().NoInputFor, err2 = popDurationArg(arg)
 		case MarkStdout:
 			currentActions().MarkStdOut, err2 = popStringPArg(arg)
 		case MarkStdErr:

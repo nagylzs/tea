@@ -84,7 +84,7 @@ actions. "Last one wins" semantics for mark/prefix/suffix/color come from simply
 commands run. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
 
 `processTimedCommands` is driven by a 1-second idle timer in `ProcessLines` and only handles
-`--no-input-for-duration` (patternless, "no current line" commands). Both it and `processLine` call the shared
+`--no-input-for` (patternless, "no current line" commands). Both it and `processLine` call the shared
 `applyActions` for every action that does not touch the current line (signal, stdin, exit code, enable/disable/toggle,
 `--next-line`, `--skip-to`). Line-specific actions (mark/prefix/suffix/color/send-to) live only in `processLine`. A new
 action goes in `applyActions` unless it needs the `Line`.

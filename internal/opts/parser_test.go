@@ -194,11 +194,11 @@ func TestConditions(t *testing.T) {
 			}
 		}
 	})
-	t.Run("--no-input-for-duration", func(t *testing.T) {
-		o := mustParse(t, withTail("-c", "--no-input-for-duration", "1500ms")...)
-		d := o.Commands[0].Conditions.NoInputForDuration
+	t.Run("--no-input-for", func(t *testing.T) {
+		o := mustParse(t, withTail("-c", "--no-input-for", "1500ms")...)
+		d := o.Commands[0].Conditions.NoInputFor
 		if d == nil || *d != 1500*time.Millisecond {
-			t.Errorf("NoInputForDuration = %v", d)
+			t.Errorf("NoInputFor = %v", d)
 		}
 	})
 }
@@ -381,16 +381,16 @@ func TestParseErrors(t *testing.T) {
 		{"share-streams with --std-err", withTail("--share-streams", "-c", "--std-err"), "--std-err or --std-all"},
 		{"share-streams with --std-all", withTail("--share-streams", "-c", "-a"), "--std-err or --std-all"},
 		{"share-streams with --mark-stderr", withTail("--share-streams", "-c", "--mark-stderr", "x"), "--mark-stderr"},
-		{"invalid duration", withTail("-c", "--no-input-for-duration", "soon"), "invalid duration"},
+		{"invalid duration", withTail("-c", "--no-input-for", "soon"), "invalid duration"},
 		{"--timeout not implemented", withTail("-c", "--timeout", "1s"), "not implemented"},
 		{"--or-timeout not implemented", withTail("-c", "--or-timeout", "1s"), "not implemented"},
 		{"--min-match-time not implemented", withTail("-c", "--min-match-time", "1s"), "not implemented"},
-		{"two timed conditions", withTail("-c", "--no-input-for-duration", "1s", "-t", "1s"), "single timeout"},
-		{"timed command with pattern", withTail("-c", "-p", "x", "--no-input-for-duration", "1s"), "cannot be combined with pattern"},
-		{"timed command with --mark", withTail("-c", "--no-input-for-duration", "1s", "-m", "."), "no 'current line'"},
-		{"timed command with --set-prefix", withTail("-c", "--no-input-for-duration", "1s", "--set-prefix", "p"), "no 'current line'"},
-		{"timed command with --send-to-stderr", withTail("-c", "--no-input-for-duration", "1s", "--send-to-stderr"), "no 'current line'"},
-		{"timed command with color", withTail("-c", "--no-input-for-duration", "1s", "--bold"), "no 'current line'"},
+		{"two timed conditions", withTail("-c", "--no-input-for", "1s", "-t", "1s"), "single timeout"},
+		{"timed command with pattern", withTail("-c", "-p", "x", "--no-input-for", "1s"), "cannot be combined with pattern"},
+		{"timed command with --mark", withTail("-c", "--no-input-for", "1s", "-m", "."), "no 'current line'"},
+		{"timed command with --set-prefix", withTail("-c", "--no-input-for", "1s", "--set-prefix", "p"), "no 'current line'"},
+		{"timed command with --send-to-stderr", withTail("-c", "--no-input-for", "1s", "--send-to-stderr"), "no 'current line'"},
+		{"timed command with color", withTail("-c", "--no-input-for", "1s", "--bold"), "no 'current line'"},
 		{"send-to both", withTail("-c", "--send-to-stdout", "--send-to-stderr"), "cannot be combined"},
 		{"exit code too big", withTail("-c", "-e", "256"), "between 0 and 255"},
 		{"exit code negative", withTail("-c", "-e", "-1"), "between 0 and 255"},

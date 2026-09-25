@@ -610,8 +610,8 @@ func TestCloseStdin(t *testing.T) {
 	expect(t, r, "ready\neof\n", "", 0)
 }
 
-func TestNoInputForDurationFires(t *testing.T) {
-	r := runTea(t, tea([]string{"-c", "idle", "--no-input-for-duration", "500ms", "-e", "42", "-s", "SIGTERM", "--disable", "idle"},
+func TestNoInputForFires(t *testing.T) {
+	r := runTea(t, tea([]string{"-c", "idle", "--no-input-for", "500ms", "-e", "42", "-s", "SIGTERM", "--disable", "idle"},
 		emit("out:started", "sleep:15")...)...)
 	if r.code != 42 || r.stdout != "started\n" {
 		t.Errorf("code=%d stdout=%q stderr=%q", r.code, r.stdout, r.stderr)
@@ -621,26 +621,26 @@ func TestNoInputForDurationFires(t *testing.T) {
 	}
 }
 
-func TestNoInputForDurationIsResetByLines(t *testing.T) {
+func TestNoInputForIsResetByLines(t *testing.T) {
 	// lines keep arriving faster than the duration, so the command never fires
-	r := runTea(t, tea([]string{"-c", "--no-input-for-duration", "2s", "-e", "42"},
+	r := runTea(t, tea([]string{"-c", "--no-input-for", "2s", "-e", "42"},
 		emit("out:a", "sleep:0.4", "out:b", "sleep:0.4", "out:c", "sleep:0.4", "out:d")...)...)
 	expect(t, r, "a\nb\nc\nd\n", "", 0)
 }
 
-func TestNoInputForDurationBetweenLines(t *testing.T) {
+func TestNoInputForBetweenLines(t *testing.T) {
 	// fires during the pause, then a later line clears the exit code again
-	r := runTea(t, tea([]string{"-c", "--no-input-for-duration", "500ms", "-e", "42", "-c", "-p", "b", "--clear-exit-code"},
+	r := runTea(t, tea([]string{"-c", "--no-input-for", "500ms", "-e", "42", "-c", "-p", "b", "--clear-exit-code"},
 		emit("out:a", "sleep:2", "out:b")...)...)
 	expect(t, r, "a\nb\n", "", 0)
-	r = runTea(t, tea([]string{"-c", "--no-input-for-duration", "500ms", "-e", "42"},
+	r = runTea(t, tea([]string{"-c", "--no-input-for", "500ms", "-e", "42"},
 		emit("out:a", "sleep:2", "out:b")...)...)
 	expect(t, r, "a\nb\n", "", 42)
 }
 
-func TestNoInputForDurationRepeatsEveryIdleSecond(t *testing.T) {
+func TestNoInputForRepeatsEveryIdleSecond(t *testing.T) {
 	// without a self-disable the command fires repeatedly; count via toggling a marker command
-	r := runTea(t, tea([]string{"-c", "--no-input-for-duration", "500ms", "--toggle", "x", "-c", "x", "--disabled", "--set-prefix", "> "},
+	r := runTea(t, tea([]string{"-c", "--no-input-for", "500ms", "--toggle", "x", "-c", "x", "--disabled", "--set-prefix", "> "},
 		emit("out:a", "sleep:1.5", "out:b", "sleep:2.5", "out:c")...)...)
 	// the idle timer ticks once per second: one tick in the 1.5s pause (x on -> "> b"),
 	// two ticks in the 2.5s pause (x off, then on again -> "> c")

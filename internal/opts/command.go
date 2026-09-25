@@ -30,17 +30,17 @@ type CommandActions struct {
 }
 
 type CommandConditions struct {
-	RawPatterns        []string
-	CompiledPatterns   []*regexp.Regexp
-	Or                 bool
-	And                bool
-	No                 bool
-	StdOut             bool
-	StdErr             bool
-	AndTimeout         *time.Duration
-	OrTimeout          *time.Duration
-	MinMatchTime       *time.Duration
-	NoInputForDuration *time.Duration
+	RawPatterns      []string
+	CompiledPatterns []*regexp.Regexp
+	Or               bool
+	And              bool
+	No               bool
+	StdOut           bool
+	StdErr           bool
+	AndTimeout       *time.Duration
+	OrTimeout        *time.Duration
+	MinMatchTime     *time.Duration
+	NoInputFor       *time.Duration
 }
 
 type Command struct {

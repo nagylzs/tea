@@ -98,13 +98,13 @@ new line appears. Patterns work on lines. Lines does not contain their line-endi
 
 TIME BASED CONDITIONS
 
---no-input-for-duration
+--no-input-for DURATION
 	Specify a timeout condition. This can only be used for patternless commands. Whenever a line appears on the input
 	stream, the timeout is reset. If the given amount of time is elapsed since the last input line, then the condition
 	becomes true within one second, and the command actions are executed. Please note that this command will always
 	be executed after the last line, and you can only use actions that don't need a "current line". If there is no
 	input for several seconds, then the condition becomes true in every idle second. If you want this to fire only once,
-	then you need to add an action that disables itself (e.g.  -c NAME --no-input-for-duration 10s --disable NAME ...)
+	then you need to add an action that disables itself (e.g.  -c NAME --no-input-for 10s --disable NAME ...)
 
 -t|--timeout DURATION
 	Specify a timeout condition. For patternless commands, the command will match unconditionally after the given

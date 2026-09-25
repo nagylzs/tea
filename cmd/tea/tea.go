@@ -363,13 +363,13 @@ func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, l
 			continue
 		}
 
-		// only --no-input-for-duration is used as a timed command
-		if cmd.Conditions.NoInputForDuration == nil {
+		// only --no-input-for is used as a timed command
+		if cmd.Conditions.NoInputFor == nil {
 			continue
 		}
 
 		elapsed := time.Now().Sub(lastLineArrived)
-		if elapsed < *cmd.Conditions.NoInputForDuration {
+		if elapsed < *cmd.Conditions.NoInputFor {
 			continue
 		}
 
@@ -408,8 +408,8 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 		cmd := &(*commands)[cmdIdx]
 		cmdIdx++
 
-		// --no-input-for-duration is not used in line processing, it is a timed command
-		if cmd.Conditions.NoInputForDuration != nil {
+		// --no-input-for is not used in line processing, it is a timed command
+		if cmd.Conditions.NoInputFor != nil {
 			continue
 		}
 

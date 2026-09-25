@@ -5,7 +5,7 @@
 - [ ] The command-chain grammar is dense. Consider first-class shortcuts for the three most common uses:
   - wait for pattern, then signal (`tea -c -p PATTERN -s SIG -- ...`)
   - wait for pattern with a deadline, non-zero exit if it doesn't appear
-  - quiet-for-N-seconds, then act (`-c NAME --no-input-for-duration 10s --disable NAME`)
+  - quiet-for-N-seconds, then act (`-c NAME --no-input-for 10s --disable NAME`)
 - [ ] Document per-runtime output buffering in USAGE.txt. `stdbuf` only affects glibc stdio; Java, Go, Node,
   and Python (without `-u` / `PYTHONUNBUFFERED`) ignore it.
 
@@ -41,4 +41,3 @@
 
 - [x] Table-driven tests for `internal/opts` (parser + validator) in `internal/opts/parser_test.go`, end-to-end tests
   in `test/e2e_test.go` driving python children. See CLAUDE.md.
-- [ ] USAGE.txt example uses `--no-input-for 10s`; the option is `--no-input-for-duration`.

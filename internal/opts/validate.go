@@ -94,7 +94,7 @@ func validateCommand(cmdIdx int) error {
 		return errors.New("it is an error to specify --or without giving at least one --pattern")
 	}
 
-	if nNonNullDurations(c.AndTimeout, c.OrTimeout, c.MinMatchTime, c.NoInputForDuration) > 1 {
+	if nNonNullDurations(c.AndTimeout, c.OrTimeout, c.MinMatchTime, c.NoInputFor) > 1 {
 		return errors.New("only a single timeout based condition can be given for a command")
 	}
 
@@ -102,10 +102,10 @@ func validateCommand(cmdIdx int) error {
 		return errors.New("--timeout, --or-timeout and --min-match-time is not implemented yet")
 	}
 
-	hasLine := c.NoInputForDuration == nil
+	hasLine := c.NoInputFor == nil
 
 	if !hasLine && len(c.CompiledPatterns) > 0 {
-		return errors.New("--no-input-for-duration cannot be combined with pattern matching")
+		return errors.New("--no-input-for cannot be combined with pattern matching")
 	}
 
 	a := cmd.Actions
