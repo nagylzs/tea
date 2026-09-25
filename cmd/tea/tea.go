@@ -534,6 +534,14 @@ func applyActions(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdI
 		m.FixedExitCode.Store(-1)
 	}
 
+	if a.Exit != nil {
+		// --exit CODE: stop PROGRAM with the stop signal and use CODE as tea's exit code
+		if err := syscall.Kill(m.Cmd.Process.Pid, m.Opts.StopSignal); err != nil {
+			log.Fatal(err)
+		}
+		m.FixedExitCode.Store(*a.Exit)
+	}
+
 	for _, n := range a.Disable {
 		for _, c := range targets(chains, cmdIndices, n, "--disable") {
 			setDisabled(c, true)

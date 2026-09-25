@@ -50,6 +50,9 @@ Global options:
     input at end of file (e.g. from cron, or with < /dev/null) and you rely on --send-input, use --no-stdin: otherwise
     the end of file is forwarded immediately and the standard input of PROGRAM is closed before anything is sent.
 
+--stop-signal SIGNAL
+    The signal that the --exit action sends to PROGRAM. The default is SIGTERM. SIGNAL is given like for --signal.
+
 --share-commands
     By default, tea will create two copies of the given commands. One command chain will process the lines read from
     stdout, and the other will process lines read from stderr, in parallel. It also means, that command states and their
@@ -232,6 +235,13 @@ Exit code and signaling actions:
 	Clear the exit code that was possibly set by --set-exit-code. After this action has been performed, tea will return
 	to its default behaviour, read then exit code of PROGRAM and use that as its own exit code. Also see --set-exit-code
 
+-x|--exit EXIT_CODE
+	Stop PROGRAM and use EXIT_CODE as the exit code of tea: a shorthand for "--signal STOP_SIGNAL --set-exit-code
+	EXIT_CODE" where STOP_SIGNAL is SIGTERM unless changed with the global --stop-signal option. This is the usual way
+	to say "we have seen what we were waiting for, we are done" (--exit 0) or "give up" (--exit 1), see the examples.
+	It cannot be combined with --signal, --set-exit-code or --clear-exit-code in the same command; use those directly
+	if you need a different signal or a different combination.
+
 Branching and command control:
 
 --disable NAME
@@ -270,11 +280,18 @@ tea -p "operation completed" -s SIGINT -- command
 Wait until no new request comes in for at least 10 seconds to an nginx server, then reload its settings.
 While waiting, print a dot character for each incoming request (instead of the full access line):
 
-(tea -m . -c --no-input-for 10s --set-exit-code 0 -s SIGINT -- tail -f /var/log/nginx/access.log ) && killall -SIGHUP nginx
+(tea -m . -c --no-input-for 10s --exit 0 -- tail -f /var/log/nginx/access.log ) && killall -SIGHUP nginx
 
 Start watching the logs of a PostgreSQL container after it has been started, and wait until
 "ready to accept connections" appears in the logs. If the server does not start up within 120 seconds, then exit with
 code 1 instead.
+
+docker start postgresql-container && tea \
+	-p "ready to accept connections" --exit 0 \
+	-c --timeout 120s --exit 1 \
+	-- docker logs -f --since 10m postgresql-container
+
+The same, written out without the --exit shorthand (and stopping "docker logs" with SIGINT instead of SIGTERM):
 
 docker start postgresql-container && tea \
 	-c -p "ready to accept connections" --set-exit-code 0 --signal SIGINT \

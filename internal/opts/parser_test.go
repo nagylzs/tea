@@ -125,6 +125,16 @@ func TestGlobalOptions(t *testing.T) {
 			t.Errorf("NoStdIn set by default")
 		}
 	})
+	t.Run("--stop-signal", func(t *testing.T) {
+		o := mustParse(t, withTail("-c")...)
+		if o.StopSignal != syscall.SIGTERM {
+			t.Errorf("default StopSignal = %v", o.StopSignal)
+		}
+		o = mustParse(t, withTail("--stop-signal", "SIGINT", "-c")...)
+		if o.StopSignal != syscall.SIGINT {
+			t.Errorf("StopSignal = %v", o.StopSignal)
+		}
+	})
 	t.Run("--share-commands", func(t *testing.T) {
 		o := mustParse(t, withTail("--share-commands", "-c")...)
 		if !o.ShareCommands || o.ShareStreams {
@@ -319,6 +329,19 @@ func TestActions(t *testing.T) {
 	}
 }
 
+func TestExitAction(t *testing.T) {
+	o := mustParse(t, withTail("-c", "-x", "0", "-c", "--exit", "255")...)
+	for i, want := range []int32{0, 255} {
+		e := o.Commands[i].Actions.Exit
+		if e == nil || *e != want {
+			t.Errorf("command %d: Exit = %v, want %d", i, e, want)
+		}
+	}
+	if o.Commands[0].Actions.Signal != nil || o.Commands[0].Actions.SetExitCode != nil {
+		t.Errorf("--exit must not set Signal or SetExitCode directly")
+	}
+}
+
 func TestSignalParsing(t *testing.T) {
 	cases := []struct {
 		arg  string
@@ -460,6 +483,12 @@ func TestParseErrors(t *testing.T) {
 		{"exit code negative", withTail("-c", "-e", "-1"), "between 0 and 255"},
 		{"exit code not int", withTail("-c", "-e", "x"), "must be an int"},
 		{"set and clear exit code", withTail("-c", "-e", "1", "--clear-exit-code"), "cannot be combined"},
+		{"--exit too big", withTail("-c", "-x", "256"), "between 0 and 255"},
+		{"--exit not int", withTail("-c", "--exit", "ok"), "must be an int"},
+		{"--exit with -e", withTail("-c", "-x", "0", "-e", "1"), "--exit cannot be combined"},
+		{"--exit with --clear-exit-code", withTail("-c", "-x", "0", "--clear-exit-code"), "--exit cannot be combined"},
+		{"--exit with -s", withTail("-c", "-x", "0", "-s", "SIGINT"), "--exit cannot be combined"},
+		{"--stop-signal invalid", withTail("--stop-signal", "SIGNOPE", "-c"), "signal name or a signal number"},
 		{"unknown signal name", withTail("-c", "-s", "SIGNOPE"), "signal name or a signal number"},
 		{"signal without SIG prefix", withTail("-c", "-s", "TERM"), "signal name or a signal number"},
 		{"invalid signal number", withTail("-c", "-s", "999"), "invalid signal number"},

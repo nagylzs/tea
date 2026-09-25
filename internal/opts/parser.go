@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/fatih/color"
 )
@@ -17,6 +18,7 @@ type Type struct {
 	LineBufferSize int
 	NoStdBuf       bool
 	NoStdIn        bool
+	StopSignal     syscall.Signal
 	ShareCommands  bool
 	ShareStreams   bool
 	Commands       []Command
@@ -28,7 +30,7 @@ type Type struct {
 var Opts = defaultOpts()
 
 func defaultOpts() Type {
-	return Type{LineBufferSize: 65535, Commands: make([]Command, 0)}
+	return Type{LineBufferSize: 65535, StopSignal: syscall.SIGTERM, Commands: make([]Command, 0)}
 }
 
 var argIdx = 0  // arg index
@@ -44,6 +46,7 @@ const (
 	LineBufferSize
 	NoStdBuf
 	NoStdIn
+	StopSignal
 	ShareCommands
 	ShareStreams
 	NewCommand
@@ -84,6 +87,7 @@ const (
 	CloseStdin
 	SetExitCode
 	ClearExitCode
+	Exit
 )
 
 var shortOptions = map[string]Option{
@@ -99,6 +103,7 @@ var shortOptions = map[string]Option{
 	"-i": SendInput,
 	"-f": SendInputFile,
 	"-e": SetExitCode,
+	"-x": Exit,
 }
 
 var longOptions = map[string]Option{
@@ -109,6 +114,7 @@ var longOptions = map[string]Option{
 	"--line-buffer-size": LineBufferSize,
 	"--no-stdbuf":        NoStdBuf,
 	"--no-stdin":         NoStdIn,
+	"--stop-signal":      StopSignal,
 	"--share-commands":   ShareCommands,
 	"--share-streams":    ShareStreams,
 	"--command":          NewCommand,
@@ -149,6 +155,7 @@ var longOptions = map[string]Option{
 	"--close":            CloseStdin,
 	"--set-exit-code":    SetExitCode,
 	"--clear-exit-code":  ClearExitCode,
+	"--exit":             Exit,
 }
 
 func internalParseArgs() error {
@@ -197,6 +204,12 @@ func internalParseArgs() error {
 			Opts.NoStdBuf = true
 		case NoStdIn:
 			Opts.NoStdIn = true
+		case StopSignal:
+			var sig *syscall.Signal
+			sig, err2 = popSignalPArg(arg)
+			if err2 == nil {
+				Opts.StopSignal = *sig
+			}
 		case ShareCommands:
 			Opts.ShareCommands = true
 		case ShareStreams:
@@ -285,17 +298,11 @@ func internalParseArgs() error {
 		case CloseStdin:
 			currentActions().CloseStdIn = true
 		case SetExitCode:
-			var ec int
-			ec, err2 = popIntArg("--set-exit-code")
-			if ec < 0 || ec > 255 {
-				err2 = errors.New("--set-exit-code: code must be between 0 and 255")
-			} else {
-				var iec int32
-				iec = int32(ec)
-				currentActions().SetExitCode = &iec
-			}
+			currentActions().SetExitCode, err2 = popExitCodePArg(arg)
 		case ClearExitCode:
 			currentActions().ClearExitCode = true
+		case Exit:
+			currentActions().Exit, err2 = popExitCodePArg(arg)
 		}
 		if err2 != nil {
 			return err2
@@ -355,6 +362,8 @@ func isGlobalOption(opt Option) bool {
 	case NoStdBuf:
 		return true
 	case NoStdIn:
+		return true
+	case StopSignal:
 		return true
 	case ShareCommands:
 		return true

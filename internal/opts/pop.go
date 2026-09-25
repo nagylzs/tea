@@ -84,6 +84,19 @@ func popIntPArg(name string) (*int, error) {
 	return &s, nil
 }
 
+// popExitCodePArg consumes an exit code in the range 0..255.
+func popExitCodePArg(name string) (*int32, error) {
+	ec, err := popIntArg(name)
+	if err != nil {
+		return nil, err
+	}
+	if ec < 0 || ec > 255 {
+		return nil, fmt.Errorf("%v: code must be between 0 and 255", name)
+	}
+	iec := int32(ec)
+	return &iec, nil
+}
+
 func popSignalPArg(name string) (*syscall.Signal, error) {
 	s, err := popStringArg(name)
 	if err != nil {

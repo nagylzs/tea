@@ -138,6 +138,10 @@ func validateCommand(cmdIdx int) error {
 		return errors.New("--set-exit-code and --clear-exit-code cannot be combined")
 	}
 
+	if a.Exit != nil && (a.SetExitCode != nil || a.ClearExitCode || a.Signal != nil) {
+		return errors.New("--exit cannot be combined with --set-exit-code, --clear-exit-code or --signal (it is a shorthand for -s STOP_SIGNAL -e CODE)")
+	}
+
 	err := checkNameRefs(a.Disable, a.Enable, "--disable", "--enable")
 	if err != nil {
 		return err

@@ -656,6 +656,38 @@ func TestMultipleMatchingCommandsSendMultipleSignals(t *testing.T) {
 	}
 }
 
+func TestExitAction(t *testing.T) {
+	t.Run("--exit sends SIGTERM by default and sets the exit code", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-p", "^ready$", "--exit", "0"}, "signals.py")...)
+		expect(t, r, "ready\ngot SIGTERM\n", "", 0)
+		r = runTea(t, tea([]string{"-p", "^ready$", "-x", "42"}, "signals.py")...)
+		expect(t, r, "ready\ngot SIGTERM\n", "", 42)
+	})
+	t.Run("--stop-signal changes the signal", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--stop-signal", "SIGINT", "-p", "^ready$", "--exit", "0",
+			"-c", "-p", "got SIGINT", "-s", "SIGTERM"}, "signals.py")...)
+		expect(t, r, "ready\ngot SIGINT\ngot SIGTERM\n", "", 0)
+	})
+	t.Run("readiness wait with deadline, both outcomes", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-p", "ready", "-x", "0", "-c", "-t", "5s", "-x", "1"},
+			emit("out:ready", "sleep:15")...)...)
+		if r.code != 0 || r.stdout != "ready\n" {
+			t.Errorf("code=%d stdout=%q", r.code, r.stdout)
+		}
+		r = runTea(t, tea([]string{"-p", "ready", "-x", "0", "-c", "-t", "500ms", "-x", "1"},
+			emit("out:starting", "sleep:15")...)...)
+		if r.code != 1 || r.stdout != "starting\n" {
+			t.Errorf("code=%d stdout=%q", r.code, r.stdout)
+		}
+	})
+	t.Run("--exit from a timed command", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--no-input-for", "500ms", "--exit", "0"}, emit("out:a", "sleep:15")...)...)
+		if r.code != 0 || r.stdout != "a\n" || r.took > 5*time.Second {
+			t.Errorf("code=%d stdout=%q took=%v", r.code, r.stdout, r.took)
+		}
+	})
+}
+
 func TestSignalKilledChildExitCode(t *testing.T) {
 	// SIGKILL is not caught: the child dies by signal, exec reports -1, which becomes 255
 	r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-s", "SIGKILL"}, "signals.py")...)

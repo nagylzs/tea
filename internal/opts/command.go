@@ -24,6 +24,7 @@ type CommandActions struct {
 	CloseStdIn    bool
 	SetExitCode   *int32
 	ClearExitCode bool
+	Exit          *int32 // --exit: send the stop signal and use this exit code
 	SendToStdOut  bool
 	SendToStdErr  bool
 	Color         *color.Color
