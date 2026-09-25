@@ -832,6 +832,119 @@ func TestNoInputForRepeatsEveryIdleSecond(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// --timeout
+
+func TestTimeout(t *testing.T) {
+	t.Run("deadline fires", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "--timeout", "500ms", "-e", "1", "-s", "SIGTERM"},
+			emit("out:started", "sleep:15")...)...)
+		if r.code != 1 || r.stdout != "started\n" {
+			t.Errorf("code=%d stdout=%q stderr=%q", r.code, r.stdout, r.stderr)
+		}
+		if r.took > 5*time.Second {
+			t.Errorf("took %v, the deadline should have fired after about one second", r.took)
+		}
+	})
+	t.Run("deadline not reached when the child finishes first", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-t", "5s", "-e", "1"}, emit("out:a")...)...)
+		expect(t, r, "a\n", "", 0)
+		if r.took > 3*time.Second {
+			t.Errorf("took %v, tea should exit with the child", r.took)
+		}
+	})
+	t.Run("readiness wait with deadline: ready first", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "-p", "ready", "-e", "0", "-s", "SIGTERM",
+			"-c", "-t", "5s", "-e", "1", "-s", "SIGTERM"},
+			emit("out:starting", "sleep:0.3", "out:ready", "sleep:15")...)...)
+		if r.code != 0 || r.stdout != "starting\nready\n" {
+			t.Errorf("code=%d stdout=%q", r.code, r.stdout)
+		}
+	})
+	t.Run("readiness wait with deadline: deadline first", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "-p", "ready", "-e", "0", "-s", "SIGTERM",
+			"-c", "-t", "500ms", "-e", "1", "-s", "SIGTERM"},
+			emit("out:starting", "sleep:15", "out:ready")...)...)
+		if r.code != 1 || r.stdout != "starting\n" {
+			t.Errorf("code=%d stdout=%q", r.code, r.stdout)
+		}
+	})
+	t.Run("deadline counts from when the command was enabled", func(t *testing.T) {
+		// step1 appears at 1.5s; the 500ms deadline must not fire before that
+		r := runTea(t, tea([]string{
+			"-c", "-p", "^step1$", "--enable", "t",
+			"-c", "t", "--disabled", "--timeout", "500ms", "-e", "7", "-s", "SIGTERM"},
+			emit("out:a", "sleep:1.5", "out:step1", "sleep:15")...)...)
+		if r.code != 7 || r.stdout != "a\nstep1\n" {
+			t.Errorf("code=%d stdout=%q", r.code, r.stdout)
+		}
+		if r.took < 2*time.Second || r.took > 6*time.Second {
+			t.Errorf("took %v, expected roughly 1.5s + up to 2 ticks", r.took)
+		}
+	})
+	t.Run("fires once, not on every tick", func(t *testing.T) {
+		// toggling x on every tick would flip the prefix on and off
+		r := runTea(t, tea([]string{
+			"-c", "-t", "500ms", "--toggle", "x",
+			"-c", "x", "--disabled", "--set-prefix", "> "},
+			emit("out:a", "sleep:1.5", "out:b", "sleep:1", "out:c", "sleep:1", "out:d")...)...)
+		expect(t, r, "a\n> b\n> c\n> d\n", "", 0)
+	})
+	t.Run("re-enabling restarts the clock", func(t *testing.T) {
+		// t fires (x on, t off); "a" re-enables t; t fires again (x off)
+		r := runTea(t, tea([]string{
+			"-c", "t", "-t", "500ms", "--toggle", "x", "--disable", "t",
+			"-c", "-p", "^a$", "--enable", "t",
+			"-c", "x", "--disabled", "--set-prefix", "> "},
+			emit("sleep:1.5", "out:a", "sleep:1.5", "out:b")...)...)
+		expect(t, r, "> a\nb\n", "", 0)
+	})
+	t.Run("enabled from the stderr chain", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "--std-err", "-p", "^go$", "--enable", "t",
+			"-c", "t", "--disabled", "-t", "500ms", "-e", "9", "-s", "SIGTERM"},
+			emit("err:go", "sleep:15")...)...)
+		if r.code != 9 || r.stderr != "go\n" {
+			t.Errorf("code=%d stderr=%q", r.code, r.stderr)
+		}
+	})
+	t.Run("a timed command's --disable applies to both chains", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "-t", "500ms", "--disable", "x",
+			"-c", "x", "-a", "--set-prefix", "> "},
+			emit("out:a", "err:b", "sleep:1.5", "out:c", "err:d")...)...)
+		expect(t, r, "> a\nc\n", "> b\nd\n", 0)
+	})
+	t.Run("timed command sends input once, not once per chain", func(t *testing.T) {
+		// close the child's stdin only after two quiet seconds, so every queued
+		// input is echoed and can be counted
+		r := runTea(t, tea([]string{
+			"-c", "i", "-t", "500ms", "-i", "x\n", "--disable", "i",
+			"-c", "-p", "^input: x$", "--enable", "q",
+			"-c", "q", "--disabled", "--no-input-for", "2s", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: x\neof\n", "", 0)
+	})
+}
+
+func TestNoInputForCountsBothStreams(t *testing.T) {
+	// stdout is quiet for 1s at a time, but stderr fills the gaps: never idle for 800ms
+	r := runTea(t, tea([]string{"-c", "--no-input-for", "800ms", "-e", "5"},
+		emit("out:a", "sleep:0.5", "err:b", "sleep:0.5", "out:c", "sleep:0.5", "err:d", "sleep:0.5", "out:e")...)...)
+	expect(t, r, "a\nc\ne\n", "b\nd\n", 0)
+}
+
+func TestNoInputForFiresOnceNotPerChain(t *testing.T) {
+	r := runTea(t, tea([]string{
+		"-c", "i", "--no-input-for", "500ms", "-i", "x\n", "--disable", "i",
+		"-c", "-p", "^input: x$", "--enable", "q",
+		"-c", "q", "--disabled", "--no-input-for", "2s", "--close"},
+		emit("out:ready", "stdin")...)...)
+	expect(t, r, "ready\ninput: x\neof\n", "", 0)
+}
+
+// ---------------------------------------------------------------------------
 // Forwarding tea's own stdin
 
 func TestStdinForwarding(t *testing.T) {

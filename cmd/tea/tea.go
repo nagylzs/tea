@@ -128,6 +128,17 @@ func main() {
 	chStdOutIn := make(LineChannel, 1)
 	chStdErrIn := make(LineChannel, 1)
 
+	// One instance of every command. Chains share the timed commands and get
+	// their own copies of the line commands (see newChain).
+	shared := make(Chain, len(o.Commands))
+	for i := range o.Commands {
+		shared[i] = &o.Commands[i]
+		shared[i].ResetStarted()
+	}
+	lastLine[0] = time.Now()
+	lastLine[1] = lastLine[0]
+	var chains []Chain
+
 	wgProc := sync.WaitGroup{}
 
 	if o.ShareStreams {
@@ -141,8 +152,9 @@ func main() {
 			close(chStdOutIn)
 		}()
 		// Only chStdOutIn is used
+		chains = []Chain{shared}
 		wgProc.Add(1)
-		go ProcessLines(&o.Commands, o.CmdIdx, chStdInIn, chStdOutIn, chStdOutOut, chStdErrOut, &wgProc)
+		go ProcessLines(shared, o.CmdIdx, chStdInIn, chStdOutIn, chStdOutOut, chStdErrOut, &wgProc)
 	} else {
 		// normal: read from stdout and stderr, and put them into chStdOutIn and chStdErrIn
 		go ReadLines(m.StdOut, m.Opts.LineBufferSize, false, chStdOutIn, nil)
@@ -171,21 +183,32 @@ func main() {
 				close(chIn)
 			}()
 			// Process serialized lines with the same command chain
+			chains = []Chain{shared}
 			wgProc.Add(1)
-			go ProcessLines(&o.Commands, o.CmdIdx, chStdInIn, chIn, chStdOutOut, chStdErrOut, &wgProc)
+			go ProcessLines(shared, o.CmdIdx, chStdInIn, chIn, chStdOutOut, chStdErrOut, &wgProc)
 		} else {
-			// Process stdin and stdout with different command chain instances
-			cmdStdOut := opts.CloneCommands(o.Commands)
-			cmdStdErr := opts.CloneCommands(o.Commands)
+			// Process stdout and stderr with different command chain instances
+			cmdStdOut := newChain(shared)
+			cmdStdErr := newChain(shared)
+			chains = []Chain{cmdStdOut, cmdStdErr}
 			wgProc.Add(2)
-			go ProcessLines(&cmdStdOut, o.CmdIdx, chStdInIn, chStdOutIn, chStdOutOut, chStdErrOut, &wgProc)
-			go ProcessLines(&cmdStdErr, o.CmdIdx, chStdInIn, chStdErrIn, chStdOutOut, chStdErrOut, &wgProc)
+			go ProcessLines(cmdStdOut, o.CmdIdx, chStdInIn, chStdOutIn, chStdOutOut, chStdErrOut, &wgProc)
+			go ProcessLines(cmdStdErr, o.CmdIdx, chStdInIn, chStdErrIn, chStdOutOut, chStdErrOut, &wgProc)
 		}
 
 	}
 
+	// Timed commands are evaluated once per second, independently of the chains.
+	timerDone := make(chan struct{})
+	wgTimer := sync.WaitGroup{}
+	wgTimer.Add(1)
+	go RunTimers(chains, o.CmdIdx, chStdInIn, timerDone, &wgTimer)
+
 	go func() {
 		wgProc.Wait()
+		// stop the timers before the child is reaped, so a late --signal cannot fail
+		close(timerDone)
+		wgTimer.Wait()
 		close(chStdOutOut)
 		close(chStdErrOut)
 	}()
@@ -337,53 +360,148 @@ func ForwardStdIn(r io.Reader, bufSize int, ch chan<- stdInRequest) {
 	}
 }
 
-func ProcessLines(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan stdInRequest, chIn LineChannel, chStdOutOut chan string, chStdErrOut chan string, wgProc *sync.WaitGroup) {
-	for cmdIdx := range *commands {
-		(*commands)[cmdIdx].ResetStarted()
-	}
+// Chain is one command chain: the commands in order, as pointers so that a
+// timed command can be one shared instance across chains (see newChain).
+type Chain []*opts.Command
 
-	const idleDuration = 1 * time.Second
-	idleTimer := time.NewTimer(idleDuration)
-	defer idleTimer.Stop()
+// stateMu guards all mutable command state (Disabled, Started, Fired) and
+// lastLine. A chain processor holds it while it evaluates a line, the timer
+// goroutine while it evaluates the timed commands. Output is written outside
+// the lock.
+var stateMu sync.Mutex
 
-	lastLineArrived := time.Now()
+// lastLine is when the last line arrived on stdout (0) and stderr (1).
+var lastLine [2]time.Time
 
-ForLoop:
-	for {
-		select {
-		case line, ok := <-chIn:
-			if !ok {
-				// Channel was closed, exit the loop
-				break ForLoop
-			}
-
-			processLine(commands, cmdIndices, chStdInIn, line, chStdErrOut, chStdOutOut)
-			lastLineArrived = time.Now()
-
-			// Simple Reset in Go 1.23+ (no manual draining required!)
-			idleTimer.Stop()
-			idleTimer.Reset(idleDuration)
-
-		case <-idleTimer.C:
-			processTimedCommands(commands, cmdIndices, lastLineArrived, chStdInIn, chStdOutOut)
-
-			// Reset timer to wait another second if channel remains idle
-			idleTimer.Reset(idleDuration)
+// newChain returns the chain for one stream. Line commands are deep copies so
+// that --disable/--enable/--toggle state is independent per stream (as
+// USAGE.txt promises); timed commands are shared, because there is exactly one
+// instance of each timed command no matter how many chains there are.
+func newChain(shared Chain) Chain {
+	chain := make(Chain, len(shared))
+	for i, c := range shared {
+		if c.IsTimed() {
+			chain[i] = c
+		} else {
+			cp := c.Clone()
+			chain[i] = &cp
 		}
 	}
-	//for line := range chIn {
-	//	processLine(commands, CmdIdx, chStdInIn, line, chStdErrOut, chStdOutOut)
-	//}
-	wgProc.Done()
+	return chain
+}
+
+// setDisabled changes a command's state. Enabling a command that was disabled
+// (re)arms its --timeout: the deadline counts from when it was last enabled.
+func setDisabled(c *opts.Command, disabled bool) {
+	if c.Disabled && !disabled {
+		c.ResetStarted()
+		c.Fired = false
+	}
+	c.Disabled = disabled
+}
+
+// ProcessLines runs the chain over every line of chIn.
+func ProcessLines(chain Chain, cmdIndices map[string]int, chStdInIn chan stdInRequest, chIn LineChannel, chStdOutOut chan string, chStdErrOut chan string, wgProc *sync.WaitGroup) {
+	defer wgProc.Done()
+	for line := range chIn {
+		processLine(chain, cmdIndices, chStdInIn, line, chStdErrOut, chStdOutOut)
+	}
+}
+
+// RunTimers evaluates the timed commands (--no-input-for, --timeout) once per
+// second until done is closed. Timed commands are evaluated here and only
+// here, so each fires once per tick at most, and their --disable/--enable/
+// --toggle actions apply to every chain.
+func RunTimers(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdInRequest, done <-chan struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-ticker.C:
+			evaluateTimers(chains, cmdIndices, chStdInIn, now)
+		}
+	}
+}
+
+func evaluateTimers(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdInRequest, now time.Time) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+
+	last := lastLine[0]
+	if lastLine[1].After(last) {
+		last = lastLine[1]
+	}
+	idle := now.Sub(last)
+
+	chain := chains[0] // timed commands are shared, so any chain will do
+	closeStdIn := false
+	cmdIdx := 0
+	for cmdIdx < len(chain) {
+		cmd := chain[cmdIdx]
+		cmdIdx++
+		if !cmd.IsTimed() || cmd.Disabled {
+			continue
+		}
+		c := cmd.Conditions
+		fire := false
+		if c.NoInputFor != nil && idle >= *c.NoInputFor {
+			// stays true while idle: fires on every tick unless it disables itself
+			fire = true
+		}
+		if c.Timeout != nil && !cmd.Fired && now.Sub(cmd.Started) >= *c.Timeout {
+			// fires once per arming, see setDisabled
+			cmd.Fired = true
+			fire = true
+		}
+		if !fire {
+			continue
+		}
+		if applyActions(chains, cmdIndices, chStdInIn, cmd.Actions, &cmdIdx, &closeStdIn) {
+			break
+		}
+	}
+	if closeStdIn {
+		chStdInIn <- stdInRequest{close: true}
+	}
+}
+
+// targets returns the distinct instances of the command named n across the
+// chains: one per chain for a line command, a single one for a timed command.
+func targets(chains []Chain, cmdIndices map[string]int, n string, opt string) []*opts.Command {
+	i, ok := cmdIndices[n]
+	if !ok {
+		log.Fatal(fmt.Errorf("internal error: %s references to non-existent command %v", opt, n))
+	}
+	var out []*opts.Command
+	for _, chain := range chains {
+		c := chain[i]
+		seen := false
+		for _, o := range out {
+			if o == c {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // applyActions performs the non-line-specific actions of a command: signals, stdin
 // input, exit code overrides, --disable/--enable/--toggle, --next-line and --skip-to.
-// It is shared by processLine and processTimedCommands. cmdIdx is the index of the
-// *next* command to evaluate and is rewritten by --skip-to. closeStdIn is set when
+// It is shared by processLine and evaluateTimers. chains are the chains the
+// state-changing actions apply to: the processor's own chain for a line
+// command, every chain for a timed command. cmdIdx is the index of the *next*
+// command to evaluate and is rewritten by --skip-to. closeStdIn is set when
 // --close is requested; the caller queues the close after the loop. It returns
 // true when the caller must stop evaluating further commands (--next-line).
-func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan stdInRequest, a *opts.CommandActions, cmdIdx *int, closeStdIn *bool) bool {
+// The caller holds stateMu.
+func applyActions(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdInRequest, a *opts.CommandActions, cmdIdx *int, closeStdIn *bool) bool {
 	if a.Signal != nil {
 		if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
 			log.Fatal(err)
@@ -416,27 +534,21 @@ func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn
 	}
 
 	for _, n := range a.Disable {
-		i, ok := cmdIndices[n]
-		if !ok {
-			log.Fatal(fmt.Errorf("internal error: --disable references to non-existent command %v", n))
+		for _, c := range targets(chains, cmdIndices, n, "--disable") {
+			setDisabled(c, true)
 		}
-		(*commands)[i].Disabled = true
 	}
 
 	for _, n := range a.Enable {
-		i, ok := cmdIndices[n]
-		if !ok {
-			log.Fatal(fmt.Errorf("internal error: --enable references to non-existent command %v", n))
+		for _, c := range targets(chains, cmdIndices, n, "--enable") {
+			setDisabled(c, false)
 		}
-		(*commands)[i].Disabled = false
 	}
 
 	for _, n := range a.Toggle {
-		i, ok := cmdIndices[n]
-		if !ok {
-			log.Fatal(fmt.Errorf("internal error: --toggle references to non-existent command %v", n))
+		for _, c := range targets(chains, cmdIndices, n, "--toggle") {
+			setDisabled(c, !c.Disabled)
 		}
-		(*commands)[i].Disabled = !(*commands)[i].Disabled
 	}
 
 	if a.NextLine {
@@ -453,67 +565,37 @@ func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn
 	return false
 }
 
-func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, lastLineArrived time.Time, chStdInIn chan stdInRequest, chStdOutOut chan string) {
-	// go over all commands
-	cmdIdx := 0
-	closeStdIn := false
-	for cmdIdx < len(*commands) {
+func processLine(chain Chain, cmdIndices map[string]int, chStdInIn chan stdInRequest, line Line, chStdErrOut chan string, chStdOutOut chan string) {
+	stateMu.Lock()
 
-		// eval conditions
-
-		cmd := &(*commands)[cmdIdx]
-		cmdIdx++
-
-		if cmd.Disabled { // skip disabled commands
-			continue
-		}
-
-		// only --no-input-for is used as a timed command
-		if cmd.Conditions.NoInputFor == nil {
-			continue
-		}
-
-		elapsed := time.Now().Sub(lastLineArrived)
-		if elapsed < *cmd.Conditions.NoInputFor {
-			continue
-		}
-
-		// process actions
-		if applyActions(commands, cmdIndices, chStdInIn, cmd.Actions, &cmdIdx, &closeStdIn) {
-			break
-		}
+	stream := 0
+	if line.InStdErr {
+		stream = 1
 	}
+	lastLine[stream] = time.Now()
 
-	if closeStdIn {
-		// queued after this line's --send-input requests, so they are written first
-		chStdInIn <- stdInRequest{close: true}
-	}
-
-}
-
-func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan stdInRequest, line Line, chStdErrOut chan string, chStdOutOut chan string) {
 	// Perform LineEnabled / LineDisabled at the beginning of the line
-	for i := range *commands {
-		cmd := &(*commands)[i]
+	for _, cmd := range chain {
 		if cmd.LineEnabled {
-			cmd.Disabled = false
+			setDisabled(cmd, false)
 		} else if cmd.LineDisabled {
-			cmd.Disabled = true
+			setDisabled(cmd, true)
 		}
 	}
 	// go over all commands
+	chains := []Chain{chain}
 	cmdIdx := 0
 	closeStdIn := false
 	var clr *color.Color = nil
-	for cmdIdx < len(*commands) {
+	for cmdIdx < len(chain) {
 
 		// eval conditions
 
-		cmd := &(*commands)[cmdIdx]
+		cmd := chain[cmdIdx]
 		cmdIdx++
 
-		// --no-input-for is not used in line processing, it is a timed command
-		if cmd.Conditions.NoInputFor != nil {
+		// timed commands have no current line; RunTimers evaluates them
+		if cmd.IsTimed() {
 			continue
 		}
 
@@ -530,32 +612,6 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 		if !commandLineMatch(&line, cmd) {
 			continue
 		}
-		/* TODO: process time based conditions
-
-		AndTimeout         *time.Duration
-		OrTimeout          *time.Duration
-		MinMatchTime       *time.Duration
-
-		The AndTimeout and OrTimeout could be implemented using a special Line object, that has nil line Value.
-		and emitted when the timeout is reached. The ProcessLines() method should save the "last match state"
-		of each command, and process these special lines using the "last match state" as the condition.
-
-		Steps to implement:
-
-		1. Make Line.value *string instead of string
-		2. Add command index reference Line.cmdIdx
-		3. When processing starts, create a new go routine for each command with a timeout, and emit a special
-		   line(s) when the timeout is reached. The emission target can be std-out-in or std-err-in, depending
-		   on the command's settings.
-		4. Rewrite ProcessLines, detect these special lines and treat them as timeout events. Process the action
-		   if the timeout has come, and the last state is "matched".
-		5. Think over what should happen when a timeout based command is enabled AFTER its timeout has come.
-		   Should the "enable" operation trigger its actions immediately or not?
-
-		The above should work for AndTimeout and OrTimeout. Test this, and only after that should we implement
-		MinMatchTime, MaxMatchTime, InputForDuration.
-
-		*/
 
 		// process line-specific actions ("last one wins")
 		a := cmd.Actions
@@ -584,7 +640,7 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 		}
 
 		// process shared actions
-		if applyActions(commands, cmdIndices, chStdInIn, a, &cmdIdx, &closeStdIn) {
+		if applyActions(chains, cmdIndices, chStdInIn, a, &cmdIdx, &closeStdIn) {
 			break
 		}
 	}
@@ -593,6 +649,8 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 		// queued after this line's --send-input requests, so they are written first
 		chStdInIn <- stdInRequest{close: true}
 	}
+
+	stateMu.Unlock()
 
 	var format = func(fmt string, a ...interface{}) string {
 		return fmt

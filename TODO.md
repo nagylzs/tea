@@ -14,8 +14,11 @@
 - [x] Wire `--send-input` to the child's stdin. Done: `WriteStdIn` goroutine with an unbounded queue, `--close`
   goes through the same queue so ordering is preserved.
 - [x] Implement `--send-input-file`. Done: read at execution time, queued like `--send-input`.
-- [ ] Implement `--timeout`, `--or-timeout`, `--min-match-time` (parsed, rejected in `validate.go`). Design sketch is
-  in the comment inside `processLine()`. Decide whether both per-stream command chains should fire.
+- [x] Implement `--timeout`. Done: patternless deadline counted from the last enable, fired once; timed commands are
+  now single instances evaluated by one timer goroutine, so they fire once, not once per chain.
+- [ ] `--or-timeout` and `--min-match-time` are parsed and rejected. The pattern-and-timeout semantics from the old
+  design were dropped: a pattern command plus a patternless `--timeout` command express the same thing more clearly.
+  Implement only if a concrete use case appears.
 - [x] Forward tea's own stdin to the child. Done: `ForwardStdIn`, raw chunks, EOF closes the child's stdin,
   `--no-stdin` opts out.
 

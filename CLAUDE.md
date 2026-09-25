@@ -43,7 +43,7 @@ Tests live in two places:
   color tests because fatih/color disables itself when stdout is not a TTY). Cross-stream ordering is not
   deterministic, so tests that depend on it put `sleep:` tokens between lines.
 
-Not covered because not implemented: `--timeout`, `--or-timeout`, `--min-match-time`.
+Not covered because not implemented: `--or-timeout`, `--min-match-time`.
 
 `go.mod` declares `go 1.25`; the code relies on Go 1.23+ `time.Timer.Reset` semantics (no manual channel draining).
 
@@ -78,16 +78,27 @@ The three stream modes differ only in how channels are wired in `main()`:
 
 ### Command evaluation
 
-`processLine` is the per-line loop: applies `--line-enabled/--line-disabled`, then for each command checks
-`Disabled`, stream filter (`Conditions.StdOut/StdErr`), and `commandLineMatch` (AND/OR/NO pattern logic), then applies
-actions. "Last one wins" semantics for mark/prefix/suffix/color come from simply overwriting fields on the `Line` as
-commands run. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
+`main()` builds one `Chain` (`[]*opts.Command`) of the parsed commands and, in the default two-chain mode, derives a
+chain per stream with `newChain`: line commands are deep-copied (per-stream `--disable`/`--enable`/`--toggle` state, as
+USAGE.txt promises), timed commands (`Command.IsTimed()`: `--timeout` or `--no-input-for`) are the same shared
+instance in every chain. All mutable command state is guarded by the global `stateMu`; a processor holds it while
+evaluating a line and releases it before writing output.
 
-`processTimedCommands` is driven by a 1-second idle timer in `ProcessLines` and only handles
-`--no-input-for` (patternless, "no current line" commands). Both it and `processLine` call the shared
-`applyActions` for every action that does not touch the current line (signal, stdin, exit code, enable/disable/toggle,
-`--next-line`, `--skip-to`). Line-specific actions (mark/prefix/suffix/color/send-to) live only in `processLine`. A new
-action goes in `applyActions` unless it needs the `Line`.
+`processLine` is the per-line loop: records `lastLine[stream]`, applies `--line-enabled/--line-disabled`, then for each
+command skips timed ones, checks `Disabled`, the stream filter (`Conditions.StdOut/StdErr`) and `commandLineMatch`
+(AND/OR/NO pattern logic), then applies actions. "Last one wins" semantics for mark/prefix/suffix/color come from
+overwriting fields on the `Line`. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
+
+`RunTimers` is a single goroutine, stopped before the child is reaped, that ticks once per second and calls
+`evaluateTimers`: `--no-input-for` fires on every tick while `now - max(lastLine)` is at least the duration;
+`--timeout` fires once when `now - Started` reaches the duration, then sets `Fired`. `setDisabled` is the only way
+state changes: enabling a disabled command resets `Started` and `Fired`, which is what makes a `--timeout` count
+from the last enable. Timed commands' state-changing actions go to every chain (`targets` dedupes the shared
+instances), a line command's only to its own chain.
+
+Both paths share `applyActions` for every action that does not touch the current line (signal, stdin, exit code,
+enable/disable/toggle, `--next-line`, `--skip-to`). Line-specific actions (mark/prefix/suffix/color/send-to) live only
+in `processLine`. A new action goes in `applyActions` unless it needs the `Line`.
 
 The child's stdin has one owner, the `WriteStdIn` goroutine, fed through `chStdInIn` by three producers:
 `--send-input`/`--send-input-file`/`--close` from the processors, and `ForwardStdIn`, which copies tea's own stdin in
@@ -99,5 +110,4 @@ forwarded data silently. The writer never exits; `main()` sends a `done` flush m
 
 `--send-input-file` reads the file in `applyActions` when the action fires and queues the contents the same way.
 
-`--timeout`, `--or-timeout`, `--min-match-time` are parsed and rejected in `validate.go` as not implemented; a design
-sketch for them is in the big comment inside `processLine`.
+`--or-timeout` and `--min-match-time` are parsed and rejected in `validate.go` as not implemented.

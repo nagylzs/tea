@@ -37,7 +37,7 @@ type CommandConditions struct {
 	No               bool
 	StdOut           bool
 	StdErr           bool
-	AndTimeout       *time.Duration
+	Timeout          *time.Duration
 	OrTimeout        *time.Duration
 	MinMatchTime     *time.Duration
 	NoInputFor       *time.Duration
@@ -50,11 +50,19 @@ type Command struct {
 	LineEnabled  bool
 	Conditions   *CommandConditions
 	Actions      *CommandActions
-	Started      time.Time
+	Started      time.Time // when the command was last enabled (or tea started); --timeout counts from here
+	Fired        bool      // --timeout has fired since the command was last enabled
 }
 
 func (c *Command) ResetStarted() {
 	c.Started = time.Now()
+}
+
+// IsTimed reports whether the command is time based (--timeout or
+// --no-input-for) rather than line based. Timed commands have no "current
+// line" and are evaluated by a timer, not per line.
+func (c *Command) IsTimed() bool {
+	return c.Conditions.Timeout != nil || c.Conditions.NoInputFor != nil
 }
 
 func CreateCommand() Command {

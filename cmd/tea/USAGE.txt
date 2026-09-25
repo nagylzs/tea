@@ -108,29 +108,29 @@ new line appears. Patterns work on lines. Lines does not contain their line-endi
 
 TIME BASED CONDITIONS
 
+Time based commands have no "current line". They cannot use patterns, --std-err or --std-all, nor any output
+manipulation action (--mark, --mark-stderr, --set-prefix, --set-suffix, --send-to-stdout, --send-to-stderr, colors).
+Their conditions are checked once per second, so their actions run within one second after the condition became
+true. There is exactly one instance of each time based command, even when stdout and stderr are processed by
+separate command chains (see --share-commands): --enable, --disable and --toggle from either chain act on that single
+instance, and the --enable, --disable and --toggle actions of a time based command act on both chains.
+
 --no-input-for DURATION
-	Specify a timeout condition. This can only be used for patternless commands. Whenever a line appears on the input
-	stream, the timeout is reset. If the given amount of time is elapsed since the last input line, then the condition
-	becomes true within one second, and the command actions are executed. Please note that this command will always
-	be executed after the last line, and you can only use actions that don't need a "current line". If there is no
-	input for several seconds, then the condition becomes true in every idle second. If you want this to fire only once,
-	then you need to add an action that disables itself (e.g.  -c NAME --no-input-for 10s --disable NAME ...)
+	Idle condition. Whenever a line appears on stdout or stderr of PROGRAM, the idle time is reset. The condition is
+	true when at least DURATION has elapsed since the last line. Please note that the condition stays true while
+	PROGRAM is silent, so the actions are executed again in every idle second. If you want them to run only once, add
+	an action that disables the command (e.g. -c NAME --no-input-for 10s --disable NAME ...); if you want them to run
+	once per quiet period, combine that with --line-enabled.
 
 -t|--timeout DURATION
-	Specify a timeout condition. For patternless commands, the command will match unconditionally after the given
-	DURATION. For commands with patterns, the command will match if the last pattern match evaluated to true,
-	AND at least the given timeout is elapsed. The action can be triggered either by an incoming matching line,
-	or after the given timeout (e.g. between two incoming lines, or after the last line).
+	Deadline condition. The condition becomes true once DURATION has elapsed since the command was last enabled: for
+	a command that is enabled from the start, since PROGRAM was started; for a command created with --disabled, since
+	it was enabled by --enable or --toggle. The actions run once. Enabling the command again (after it disabled
+	itself, or after --disable and --enable) restarts the clock, so a deadline can also be relative to an event seen
+	in the output (see the examples).
 
-	TODO: when streams are not shared, then we have two sets (copies) of commands. Should they both fire???
-
---or-timeout DURATION
-	Specify a timeout condition. For patternless commands, the command will match unconditionally after the given
-	DURATION. For commands with patterns, the command will match if the last pattern match evaluated to true,
-	OR at least the given timeout is elapsed. The action can be triggered either by an incoming matching line,
-	or after the given timeout (e.g. between two incoming lines, or after the last line).
-
-	TODO: when streams are not shared, then we have two sets (copies) of commands. Should they both fire???
+--or-timeout DURATION, --min-match-time DURATION
+	Reserved, not implemented yet.
 
 Output stream manipulation actions, they cannot be used with time based commands:
 
@@ -258,6 +258,10 @@ Branching and command control:
 	enabled command (or finishes the processing of the line, if there is no next enabled command).
 
 Example usages:
+
+Send SIGINT 30 seconds after "phase 2 started" appears in the output, and not before:
+
+tea -c -p "phase 2 started" --enable deadline -c deadline --disabled --timeout 30s -s SIGINT -- command
 
 Wait until "operation completed" appears in the output of a program, then send SIGINT:
 

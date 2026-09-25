@@ -204,6 +204,24 @@ func TestConditions(t *testing.T) {
 			}
 		}
 	})
+	t.Run("--timeout", func(t *testing.T) {
+		o := mustParse(t, withTail("-c", "-t", "2s", "-c", "--timeout", "1m")...)
+		for i, want := range []time.Duration{2 * time.Second, time.Minute} {
+			d := o.Commands[i].Conditions.Timeout
+			if d == nil || *d != want {
+				t.Errorf("command %d: Timeout = %v, want %v", i, d, want)
+			}
+			if !o.Commands[i].IsTimed() {
+				t.Errorf("command %d: IsTimed() = false", i)
+			}
+		}
+	})
+	t.Run("line commands are not timed", func(t *testing.T) {
+		o := mustParse(t, withTail("-c", "-p", "x")...)
+		if o.Commands[0].IsTimed() {
+			t.Errorf("IsTimed() = true")
+		}
+	})
 	t.Run("--no-input-for", func(t *testing.T) {
 		o := mustParse(t, withTail("-c", "--no-input-for", "1500ms")...)
 		d := o.Commands[0].Conditions.NoInputFor
@@ -399,7 +417,10 @@ func TestParseErrors(t *testing.T) {
 		{"share-streams with --std-all", withTail("--share-streams", "-c", "-a"), "--std-err or --std-all"},
 		{"share-streams with --mark-stderr", withTail("--share-streams", "-c", "--mark-stderr", "x"), "--mark-stderr"},
 		{"invalid duration", withTail("-c", "--no-input-for", "soon"), "invalid duration"},
-		{"--timeout not implemented", withTail("-c", "--timeout", "1s"), "not implemented"},
+		{"--timeout with pattern", withTail("-c", "-p", "x", "-t", "1s"), "cannot be combined with pattern"},
+		{"--timeout with --std-err", withTail("-c", "-t", "1s", "--std-err"), "cannot use --std-err or --std-all"},
+		{"--no-input-for with --std-all", withTail("-c", "--no-input-for", "1s", "-a"), "cannot use --std-err or --std-all"},
+		{"--timeout with --mark", withTail("-c", "-t", "1s", "-m", "."), "no 'current line'"},
 		{"--or-timeout not implemented", withTail("-c", "--or-timeout", "1s"), "not implemented"},
 		{"--min-match-time not implemented", withTail("-c", "--min-match-time", "1s"), "not implemented"},
 		{"two timed conditions", withTail("-c", "--no-input-for", "1s", "-t", "1s"), "single timeout"},

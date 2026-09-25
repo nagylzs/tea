@@ -55,7 +55,7 @@ const (
 	No
 	StdErr
 	StdAll
-	AndTimeout
+	Timeout
 	OrTimeout
 	MinMatchTime
 	NoInputFor
@@ -92,7 +92,7 @@ var shortOptions = map[string]Option{
 	"-c": NewCommand,
 	"-p": Pattern,
 	"-a": StdAll,
-	"-t": AndTimeout,
+	"-t": Timeout,
 	"-m": MarkStdout,
 	"-n": Next,
 	"-s": Signal,
@@ -120,7 +120,7 @@ var longOptions = map[string]Option{
 	"--no":               No,
 	"--std-err":          StdErr,
 	"--std-all":          StdAll,
-	"--timeout":          AndTimeout,
+	"--timeout":          Timeout,
 	"--or-timeout":       OrTimeout,
 	"--min-match-time":   MinMatchTime,
 	"--no-input-for":     NoInputFor,
@@ -223,8 +223,8 @@ func internalParseArgs() error {
 		case StdAll:
 			currentConditions().StdOut = true
 			currentConditions().StdErr = true
-		case AndTimeout:
-			currentConditions().AndTimeout, err2 = popDurationArg(arg)
+		case Timeout:
+			currentConditions().Timeout, err2 = popDurationArg(arg)
 		case OrTimeout:
 			currentConditions().OrTimeout, err2 = popDurationArg(arg)
 		case MinMatchTime:
