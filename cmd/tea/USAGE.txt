@@ -50,6 +50,11 @@ Global options:
     input at end of file (e.g. from cron, or with < /dev/null) and you rely on --send-input, use --no-stdin: otherwise
     the end of file is forwarded immediately and the standard input of PROGRAM is closed before anything is sent.
 
+--deadline DURATION
+    Give up after DURATION: stop PROGRAM with the stop signal and exit with code 1, unless tea has exited before.
+    This is a shorthand for a last command "-c --timeout DURATION --exit 1" (see --timeout and --exit); write that
+    command out if you need a different exit code. "tea --deadline 30s -- PROGRAM" runs PROGRAM with a time limit.
+
 --stop-signal SIGNAL
     The signal that the --exit action sends to PROGRAM. The default is SIGTERM. SIGNAL is given like for --signal.
 
@@ -287,11 +292,11 @@ Start watching the logs of a PostgreSQL container after it has been started, and
 code 1 instead.
 
 docker start postgresql-container && tea \
-	-p "ready to accept connections" --exit 0 \
-	-c --timeout 120s --exit 1 \
+	-p "ready to accept connections" --exit 0 --deadline 120s \
 	-- docker logs -f --since 10m postgresql-container
 
-The same, written out without the --exit shorthand (and stopping "docker logs" with SIGINT instead of SIGTERM):
+The same, written out without the --deadline and --exit shorthands (and stopping "docker logs" with SIGINT instead
+of SIGTERM):
 
 docker start postgresql-container && tea \
 	-c -p "ready to accept connections" --set-exit-code 0 --signal SIGINT \

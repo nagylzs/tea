@@ -329,6 +329,37 @@ func TestActions(t *testing.T) {
 	}
 }
 
+func TestDeadline(t *testing.T) {
+	t.Run("appends an implicit last command", func(t *testing.T) {
+		o := mustParse(t, withTail("--deadline", "30s", "-c", "-p", "x")...)
+		if len(o.Commands) != 2 {
+			t.Fatalf("got %d commands", len(o.Commands))
+		}
+		d := o.Commands[1]
+		if d.Conditions.Timeout == nil || *d.Conditions.Timeout != 30*time.Second || !d.IsTimed() {
+			t.Errorf("deadline command conditions = %+v", d.Conditions)
+		}
+		if d.Actions.Exit == nil || *d.Actions.Exit != 1 {
+			t.Errorf("deadline command Exit = %v", d.Actions.Exit)
+		}
+		if o.Deadline == nil || *o.Deadline != 30*time.Second {
+			t.Errorf("Deadline = %v", o.Deadline)
+		}
+	})
+	t.Run("is enough on its own", func(t *testing.T) {
+		o := mustParse(t, "--deadline", "5s", "--no-stdbuf", "--", "true")
+		if len(o.Commands) != 1 || !o.Commands[0].IsTimed() {
+			t.Errorf("commands = %+v", o.Commands)
+		}
+	})
+	t.Run("invalid duration", func(t *testing.T) {
+		_, err := parse(t, withTail("--deadline", "soon", "-c")...)
+		if err == nil || !strings.Contains(err.Error(), "invalid duration") {
+			t.Errorf("err = %v", err)
+		}
+	})
+}
+
 func TestExitAction(t *testing.T) {
 	o := mustParse(t, withTail("-c", "-x", "0", "-c", "--exit", "255")...)
 	for i, want := range []int32{0, 255} {

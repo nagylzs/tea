@@ -57,7 +57,7 @@ Two packages:
   command-level option before any `-c` starts command #1 implicitly).
   `pop.go` holds the `popXxxArg` helpers that consume the next argv value (durations, signals, colors, names).
   `validate.go` runs after parsing: compiles regexes, builds `Opts.CmdIdx` (name → index) and rejects invalid
-  combinations. **New options need entries in the `Option` enum, `longOptions`/`shortOptions`, the `switch` in
+  combinations. `--deadline` becomes an implicit last command (`--timeout D --exit 1`) there. **New options need entries in the `Option` enum, `longOptions`/`shortOptions`, the `switch` in
   `internalParseArgs`, and usually a check in `validateCommand`.**
 - `cmd/tea/tea.go` — runtime. Unless `--no-stdbuf`, PROGRAM is wrapped as `stdbuf -oL -eL PROGRAM ...` to force
   line-buffered child output.

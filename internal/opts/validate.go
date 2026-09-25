@@ -13,6 +13,15 @@ func validateOptions() error {
 		return errors.New("cannot combine --share-streams with --share-commands")
 	}
 
+	if Opts.Deadline != nil {
+		// --deadline D is an implicit last command: -c --timeout D --exit 1
+		cmd := CreateCommand()
+		cmd.Conditions.Timeout = Opts.Deadline
+		one := int32(1)
+		cmd.Actions.Exit = &one
+		Opts.Commands = append(Opts.Commands, cmd)
+	}
+
 	if len(Opts.Commands) == 0 {
 		return errors.New("you must specify at least one command with -c or --command")
 	}

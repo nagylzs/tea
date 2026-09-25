@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -19,6 +20,7 @@ type Type struct {
 	NoStdBuf       bool
 	NoStdIn        bool
 	StopSignal     syscall.Signal
+	Deadline       *time.Duration
 	ShareCommands  bool
 	ShareStreams   bool
 	Commands       []Command
@@ -47,6 +49,7 @@ const (
 	NoStdBuf
 	NoStdIn
 	StopSignal
+	Deadline
 	ShareCommands
 	ShareStreams
 	NewCommand
@@ -115,6 +118,7 @@ var longOptions = map[string]Option{
 	"--no-stdbuf":        NoStdBuf,
 	"--no-stdin":         NoStdIn,
 	"--stop-signal":      StopSignal,
+	"--deadline":         Deadline,
 	"--share-commands":   ShareCommands,
 	"--share-streams":    ShareStreams,
 	"--command":          NewCommand,
@@ -204,6 +208,8 @@ func internalParseArgs() error {
 			Opts.NoStdBuf = true
 		case NoStdIn:
 			Opts.NoStdIn = true
+		case Deadline:
+			Opts.Deadline, err2 = popDurationArg(arg)
 		case StopSignal:
 			var sig *syscall.Signal
 			sig, err2 = popSignalPArg(arg)
@@ -364,6 +370,8 @@ func isGlobalOption(opt Option) bool {
 	case NoStdIn:
 		return true
 	case StopSignal:
+		return true
+	case Deadline:
 		return true
 	case ShareCommands:
 		return true
