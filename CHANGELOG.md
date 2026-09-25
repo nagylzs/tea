@@ -60,9 +60,9 @@ It is a breaking release; see the last section before upgrading scripts.
 
 ## [1.0.0] - 2024-06-23
 
-Pre-release. Line processing, pattern conditions, output rewriting and coloring, signals and exit codes,
+Pre-release (tagged `latest` at the time, since removed). Line processing, pattern conditions, output rewriting and coloring, signals and exit codes,
 enable/disable/toggle and branching between commands. Time based conditions and input to the program were parsed
 but not implemented.
 
 [2.0.0]: https://github.com/nagylzs/tea/releases/tag/v2.0.0
-[1.0.0]: https://github.com/nagylzs/tea/releases/tag/latest
+[1.0.0]: https://github.com/nagylzs/tea/tree/f2f87dd6d5e988ce1e6f8ea03b9a2b62aff91634
