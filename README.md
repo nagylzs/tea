@@ -139,7 +139,8 @@ Layout:
 - `internal/opts/` — hand-written argument parser and validator.
 - `test/` — end-to-end tests that build the binary and drive it against small Python programs.
 
-`TODO.md` lists open items. `--or-timeout` and `--min-match-time` are parsed but not implemented.
+`TODO.md` lists open items, `CHANGELOG.md` the released changes. `--or-timeout` and `--min-match-time` are parsed
+but not implemented.
 
 ## License
 
