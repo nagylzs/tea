@@ -13,7 +13,7 @@
 
 - [x] Wire `--send-input` to the child's stdin. Done: `WriteStdIn` goroutine with an unbounded queue, `--close`
   goes through the same queue so ordering is preserved.
-- [ ] Implement `--send-input-file` (currently `log.Fatal`s at runtime).
+- [x] Implement `--send-input-file`. Done: read at execution time, queued like `--send-input`.
 - [ ] Implement `--timeout`, `--or-timeout`, `--min-match-time` (parsed, rejected in `validate.go`). Design sketch is
   in the comment inside `processLine()`. Decide whether both per-stream command chains should fire.
 - [ ] Forward tea's own stdin to the child (`ReadStdIn` call is commented out in `main()`); it should be another

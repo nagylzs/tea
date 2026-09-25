@@ -10,6 +10,8 @@ Each argument is a token that is executed in order:
   pid         write our own pid to stdout
   cat:FILE    write the contents of FILE to stdout (followed by a newline)
   long:N      write a line of N 'x' characters to stdout
+  write:PATH=TEXT
+              write TEXT and a newline into the file PATH (creating it)
   stdin       read stdin until EOF, writing "input: <line>" for every line,
               then write "eof"
 
@@ -44,6 +46,10 @@ def main() -> int:
         elif kind == "long":
             sys.stdout.write("x" * int(arg) + "\n")
             sys.stdout.flush()
+        elif kind == "write":
+            path, _, text = arg.partition("=")
+            with open(path, "w") as f:
+                f.write(text + "\n")
         elif kind == "stdin":
             for line in sys.stdin:
                 sys.stdout.write(f"input: {line.rstrip(chr(10))}\n")

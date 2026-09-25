@@ -673,6 +673,60 @@ func TestSendInput(t *testing.T) {
 			emit("out:ready", "stdin")...)...)
 		expect(t, r, "ready\ninput: wake\neof\n", "", 0)
 	})
+	t.Run("--send-input-file writes the file contents", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "in.txt")
+		if err := os.WriteFile(file, []byte("one\ntwo\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-f", file, "-c", "-p", "^input: two$", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: one\ninput: two\neof\n", "", 0)
+	})
+	t.Run("--send-input is written before --send-input-file of the same command", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "in.txt")
+		if err := os.WriteFile(file, []byte("file\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "--send-input", "from ", "--send-input-file", file, "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: from file\neof\n", "", 0)
+	})
+	t.Run("file without trailing newline is not a line yet", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "in.txt")
+		if err := os.WriteFile(file, []byte("no newline"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-f", file, "-c", "-p", "^ready$", "-i", "!\n", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: no newline!\neof\n", "", 0)
+	})
+	t.Run("file may be created after tea starts", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "later.txt")
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-f", file, "-c", "-p", "^input:", "--close"},
+			emit("write:"+file+"=made by child", "out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: made by child\neof\n", "", 0)
+	})
+	t.Run("missing file is a fatal error", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "missing.txt")
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-f", file}, emit("out:ready", "sleep:5")...)...)
+		if r.code != 1 || !strings.Contains(r.stderr, "--send-input-file") || !strings.Contains(r.stderr, "missing.txt") {
+			t.Errorf("code=%d stderr=%q", r.code, r.stderr)
+		}
+		if r.took > 4*time.Second {
+			t.Errorf("took %v, tea should have exited immediately", r.took)
+		}
+	})
+	t.Run("timed command sends a file", func(t *testing.T) {
+		file := filepath.Join(t.TempDir(), "in.txt")
+		if err := os.WriteFile(file, []byte("wake\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		r := runTea(t, tea([]string{
+			"-c", "idle", "--no-input-for", "500ms", "-f", file, "--disable", "idle",
+			"-c", "-p", "^input: wake$", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: wake\neof\n", "", 0)
+	})
 	t.Run("child that reads stdin only after writing a lot does not deadlock", func(t *testing.T) {
 		// Every 5000-byte output line triggers a 20000-byte input while the child
 		// is still writing. With a blocking hand-off to the stdin writer, the

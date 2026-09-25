@@ -365,7 +365,12 @@ func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn
 	}
 
 	if a.InputFile != nil {
-		log.Fatal("--send-input-file not yet implemented, need to refactor ForwardStdIn")
+		// read at execution time: the file need not exist when tea starts
+		content, err := os.ReadFile(*a.InputFile)
+		if err != nil {
+			log.Fatalf("--send-input-file: %v", err)
+		}
+		chStdInIn <- stdInRequest{data: string(content)}
 	}
 
 	if a.CloseStdIn {

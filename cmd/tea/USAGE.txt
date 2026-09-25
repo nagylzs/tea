@@ -194,9 +194,11 @@ Input manipulation actions:
 
 -f|--send-input-file FILENAME
 	Input file action: specify an input file whose contents will be written to stdin of PROGRAM when the command is
-	executed. The file must exist when the action is executed (but it may not exist when tea is started).
-	When multiple commands set the input file, then the last one takes precedence. Please note that if you don't
-	have a newline at the end of the file, then a last newline won't be sent to PROGRAM.
+	executed. The file is read when the action is executed: it must exist by then (but it may not exist when tea is
+	started), and tea exits with an error if it cannot be read. The contents are queued exactly like --send-input
+	values, in the order the commands executed them; within a single command, --send-input is written before
+	--send-input-file. Please note that if you don't have a newline at the end of the file, then a last newline won't
+	be sent to PROGRAM.
 
 --close
 	Close stdin of PROGRAM. The close is performed after the current line has been processed by all commands, so

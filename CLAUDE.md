@@ -42,8 +42,7 @@ Tests live in two places:
   color tests because fatih/color disables itself when stdout is not a TTY). Cross-stream ordering is not
   deterministic, so tests that depend on it put `sleep:` tokens between lines.
 
-Not covered because not implemented: `--send-input-file`, `--timeout`, `--or-timeout`, `--min-match-time`, stdin
-forwarding.
+Not covered because not implemented: `--timeout`, `--or-timeout`, `--min-match-time`, stdin forwarding.
 
 `go.mod` declares `go 1.25`; the code relies on Go 1.23+ `time.Timer.Reset` semantics (no manual channel draining).
 
@@ -94,6 +93,7 @@ order through `unboundedQueue`, so a processor never blocks on the child's stdin
 child's stdout). The close is queued after the line's inputs. Writes to an already closed stdin log a warning.
 `main()` closes `chStdInIn` after the processors finish and waits for the writer before `cmd.Wait()`.
 
+`--send-input-file` reads the file in `applyActions` when the action fires and queues the contents the same way.
+
 `--timeout`, `--or-timeout`, `--min-match-time` are parsed and rejected in `validate.go` as not implemented; a design
-sketch for them is in the big comment inside `processLine`. `--send-input-file` parses but `log.Fatal`s at runtime.
-Forwarding tea's own stdin (`ReadStdIn`, commented out in `main()`) would be another producer on `chStdInIn`.
+sketch for them is in the big comment inside `processLine`. Forwarding tea's own stdin (`ReadStdIn`, commented out in `main()`) would be another producer on `chStdInIn`.
