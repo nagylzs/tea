@@ -344,6 +344,13 @@ func TestCommandState(t *testing.T) {
 	}
 }
 
+func TestToggleOtherCommandsIsAllowed(t *testing.T) {
+	o := mustParse(t, withTail("-c", "a", "--toggle", "b", "--toggle", "c", "-c", "b", "-c", "c", "--toggle", "a")...)
+	if got := o.Commands[0].Actions.Toggle; len(got) != 2 || got[0] != "b" || got[1] != "c" {
+		t.Errorf("Toggle = %v", got)
+	}
+}
+
 func TestSkipToForwardIsAllowed(t *testing.T) {
 	o := mustParse(t, withTail("-c", "a", "--skip-to", "c", "-c", "b", "-c", "c")...)
 	if s := o.Commands[0].Actions.SkipTo; s == nil || *s != "c" {
@@ -404,6 +411,7 @@ func TestParseErrors(t *testing.T) {
 		{"--disable unknown", withTail("-c", "--disable", "nope"), "cannot find command"},
 		{"--enable unknown", withTail("-c", "--enable", "nope"), "cannot find command"},
 		{"--toggle unknown", withTail("-c", "--toggle", "nope"), "cannot find command"},
+		{"--toggle self", withTail("-c", "a", "--toggle", "a"), "cannot toggle itself"},
 		{"name starting with dash", withTail("-c", "a", "--disable", "-a"), "cannot start with '-'"},
 		{"disable and enable same", withTail("-c", "a", "--disable", "a", "--enable", "a"), "both --disable and --enable"},
 		{"disable and toggle same", withTail("-c", "a", "--disable", "a", "--toggle", "a"), "both --disable and --toggle"},

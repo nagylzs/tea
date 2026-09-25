@@ -150,6 +150,11 @@ func validateCommand(cmdIdx int) error {
 	if err != nil {
 		return err
 	}
+	for _, name := range a.Toggle {
+		if name == cmd.Name {
+			return fmt.Errorf("--toggle: a command cannot toggle itself (it could only ever switch itself off, use --disable %v instead)", name)
+		}
+	}
 
 	if a.SkipTo != nil {
 		i, exists := Opts.CmdIdx[*a.SkipTo]

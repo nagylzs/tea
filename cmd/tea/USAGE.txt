@@ -227,7 +227,8 @@ Branching and command control:
 
 --toggle NAME
 	Toggle the NAMEd command: if it was enabled then disable, if it was disabled then enable. Can reference backward
-	and forward. Cannot toggle itself.  This action can be used multiple times in a single command.
+	and forward. This action can be used multiple times in a single command. A command cannot toggle itself: since a
+	disabled command never runs, it could only ever switch itself off, which is what --disable does.
 
 -n|--next-line
 	By using this flag, line processing stops at the current command, all subsequent commands will remain in their
