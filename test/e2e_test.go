@@ -344,6 +344,22 @@ func TestSendTo(t *testing.T) {
 		r := runTea(t, tea([]string{"-c", "--send-to-stderr", "-c", "--send-to-stdout"}, emit("out:a")...)...)
 		expect(t, r, "a\n", "", 0)
 	})
+	t.Run("--mark is chosen by input stream: stdout line redirected to stderr", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-m", "X", "--send-to-stderr"}, emit("out:a")...)...)
+		expect(t, r, "", "X", 0)
+	})
+	t.Run("--mark-stderr is chosen by input stream: stderr line redirected to stdout", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "--std-err", "--mark-stderr", "X", "--send-to-stdout"}, emit("err:a")...)...)
+		expect(t, r, "X", "", 0)
+	})
+	t.Run("--mark-stderr does not apply to a stdout line sent to stderr", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "--mark-stderr", "X", "--send-to-stderr"}, emit("out:a")...)...)
+		expect(t, r, "", "a\n", 0)
+	})
+	t.Run("mark set in an earlier command survives a later redirect", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-m", "X", "-c", "--send-to-stderr"}, emit("out:a")...)...)
+		expect(t, r, "", "X", 0)
+	})
 }
 
 // ---------------------------------------------------------------------------

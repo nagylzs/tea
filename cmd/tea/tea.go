@@ -34,13 +34,12 @@ type Main struct {
 }
 
 type Line struct {
-	Value      string
-	InStdErr   bool // the line came from stderr instead of stdout
-	OutStdErr  bool // the line should be written to stderr
-	MarkStdOut *string
-	MarkStdErr *string
-	Prefix     *string
-	Suffix     *string
+	Value     string
+	InStdErr  bool    // the line came from stderr instead of stdout
+	OutStdErr bool    // the line should be written to stderr
+	Mark      *string // replaces the line (and prefix/suffix) on output; chosen by the input stream
+	Prefix    *string
+	Suffix    *string
 }
 
 type LineChannel = chan Line
@@ -213,7 +212,7 @@ func ReadLines(reader io.ReadCloser, bufSize int, inStdErr bool, ch LineChannel,
 	scanner.Buffer(buf, bufSize)
 	for scanner.Scan() {
 		line := scanner.Text()
-		ch <- Line{line, inStdErr, inStdErr, nil, nil, nil, &NewLine}
+		ch <- Line{line, inStdErr, inStdErr, nil, nil, &NewLine}
 	}
 	if err := scanner.Err(); err != nil {
 		// e.g. bufio.ErrTooLong when a line exceeds --line-buffer-size
@@ -456,11 +455,13 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 
 		// process line-specific actions ("last one wins")
 		a := cmd.Actions
-		if a.MarkStdOut != nil {
-			line.MarkStdOut = a.MarkStdOut
+		// --mark applies to lines read from stdout, --mark-stderr to lines read from
+		// stderr, regardless of where --send-to-stdout/--send-to-stderr routes them.
+		if a.MarkStdOut != nil && !line.InStdErr {
+			line.Mark = a.MarkStdOut
 		}
-		if a.MarkStdErr != nil {
-			line.MarkStdErr = a.MarkStdErr
+		if a.MarkStdErr != nil && line.InStdErr {
+			line.Mark = a.MarkStdErr
 		}
 		if a.SendToStdOut {
 			line.OutStdErr = false
@@ -497,17 +498,12 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 		format = clr.SprintfFunc()
 	}
 
-	var out chan string
-	var mark *string
+	out := chStdOutOut
 	if line.OutStdErr {
 		out = chStdErrOut
-		mark = line.MarkStdErr
-	} else {
-		out = chStdOutOut
-		mark = line.MarkStdOut
 	}
-	if mark != nil {
-		out <- format(*mark)
+	if line.Mark != nil {
+		out <- format(*line.Mark)
 	} else {
 		if line.Prefix != nil {
 			out <- format(*line.Prefix)

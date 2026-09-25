@@ -33,8 +33,8 @@
 - [x] The child's exit status message was printed to stdout. Now stderr.
 - [x] Invalid `--fg-color`/`--bg-color` names were accepted (shadowed error variable).
 - [x] `--toggle NAME` with an unknown NAME passed validation and crashed at runtime.
-- [ ] `--mark` together with `--send-to-stderr` (or `--mark-stderr` with `--send-to-stdout`): the code picks the
-  mark by *output* stream, USAGE.txt describes `--mark` by *input* stream. Decide and document; not tested.
+- [x] `--mark` together with `--send-to-stderr` (or `--mark-stderr` with `--send-to-stdout`) picked the mark by
+  *output* stream; USAGE.txt describes it by *input* stream. The code now follows the docs.
 - [ ] USAGE.txt says `--toggle` cannot toggle its own command, but nothing enforces it (it works, toggling itself off).
 
 ## Tests
