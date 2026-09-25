@@ -11,12 +11,13 @@
 
 ## Unfinished features
 
-- [ ] Wire `--send-input` to the child's stdin. `chStdInIn` is a 1-slot buffered channel and its consumer
-  (`WriteData(m.StdIn, chStdInIn, nil)`) is commented out in `main()`, so a second `--send-input` blocks.
+- [x] Wire `--send-input` to the child's stdin. Done: `WriteStdIn` goroutine with an unbounded queue, `--close`
+  goes through the same queue so ordering is preserved.
 - [ ] Implement `--send-input-file` (currently `log.Fatal`s at runtime).
 - [ ] Implement `--timeout`, `--or-timeout`, `--min-match-time` (parsed, rejected in `validate.go`). Design sketch is
   in the comment inside `processLine()`. Decide whether both per-stream command chains should fire.
-- [ ] Forward tea's own stdin to the child (`ReadStdIn` call is commented out in `main()`).
+- [ ] Forward tea's own stdin to the child (`ReadStdIn` call is commented out in `main()`); it should be another
+  producer on `chStdInIn`.
 
 ## Correctness
 

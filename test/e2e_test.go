@@ -70,7 +70,7 @@ func runTea(t *testing.T, args ...string) result {
 	err := cmd.Run()
 	took := time.Since(start)
 	if ctx.Err() != nil {
-		t.Fatalf("tea %q timed out\nstdout:\n%s\nstderr:\n%s", args, so.String(), se.String())
+		t.Fatalf("tea %q timed out\nstdout:\n%s\nstderr:\n%s", shortArgs(args), so.String(), se.String())
 	}
 	code := 0
 	var exitErr *exec.ExitError
@@ -80,6 +80,18 @@ func runTea(t *testing.T, args ...string) result {
 		t.Fatalf("running tea %q: %v", args, err)
 	}
 	return result{so.String(), se.String(), code, took}
+}
+
+// shortArgs abbreviates long arguments (e.g. big --send-input values) for messages.
+func shortArgs(args []string) []string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if len(a) > 40 {
+			a = a[:20] + "..." + a[len(a)-10:]
+		}
+		out[i] = a
+	}
+	return out
 }
 
 // tea builds an argument list: the given tea options, then "--", then the
@@ -608,6 +620,82 @@ func TestSignalKilledChildExitCode(t *testing.T) {
 func TestCloseStdin(t *testing.T) {
 	r := runTea(t, tea([]string{"-c", "-p", "^ready$", "--close"}, emit("out:ready", "stdin")...)...)
 	expect(t, r, "ready\neof\n", "", 0)
+}
+
+func TestSendInput(t *testing.T) {
+	t.Run("input reaches the child", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-i", "hello\n", "-c", "-p", "^input: hello$", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: hello\neof\n", "", 0)
+	})
+	t.Run("several inputs on one line keep their order", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "-p", "^ready$", "-i", "a\n",
+			"-c", "-p", "^ready$", "--send-input", "b\n",
+			"-c", "-p", "^ready$", "-i", "c\n",
+			"-c", "-p", "^input: c$", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: a\ninput: b\ninput: c\neof\n", "", 0)
+	})
+	t.Run("input without newline is not a line yet", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-i", "par", "-c", "-p", "^ready$", "-i", "tial\n",
+			"-c", "-p", "^input:", "--close"}, emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: partial\neof\n", "", 0)
+	})
+	t.Run("input and close in the same command: input is written first", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-i", "bye\n", "--close"}, emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: bye\neof\n", "", 0)
+	})
+	t.Run("input from a later command on the same line is written before the close", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "--close", "-c", "-p", "^ready$", "-i", "late\n"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: late\neof\n", "", 0)
+	})
+	t.Run("input after close is dropped with a warning", func(t *testing.T) {
+		r := runTea(t, tea([]string{"-c", "-p", "^ready$", "--close", "-c", "-p", "^eof$", "-i", "too late\n"},
+			emit("out:ready", "stdin")...)...)
+		if r.stdout != "ready\neof\n" || r.code != 0 || !strings.Contains(r.stderr, "already closed") {
+			t.Errorf("stdout=%q stderr=%q code=%d", r.stdout, r.stderr, r.code)
+		}
+	})
+	t.Run("input from stderr chain and stdout chain both arrive", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "-p", "^ready$", "-i", "from-out\n",
+			"-c", "--std-err", "-p", "^go$", "-i", "from-err\n",
+			"-c", "-p", "^input: from-err$", "--close"},
+			emit("out:ready", "sleep:0.2", "err:go", "stdin")...)...)
+		expect(t, r, "ready\ninput: from-out\ninput: from-err\neof\n", "go\n", 0)
+	})
+	t.Run("timed command sends input", func(t *testing.T) {
+		r := runTea(t, tea([]string{
+			"-c", "idle", "--no-input-for", "500ms", "-i", "wake\n", "--disable", "idle",
+			"-c", "-p", "^input: wake$", "--close"},
+			emit("out:ready", "stdin")...)...)
+		expect(t, r, "ready\ninput: wake\neof\n", "", 0)
+	})
+	t.Run("child that reads stdin only after writing a lot does not deadlock", func(t *testing.T) {
+		// Every 5000-byte output line triggers a 20000-byte input while the child
+		// is still writing. With a blocking hand-off to the stdin writer, the
+		// writer stalls once a pipe buffer (64KB) of input piles up unread, line
+		// processing stalls behind it, tea stops draining the child's stdout, and
+		// the child (which still has far more than 64KB to write) blocks on its own
+		// write: a deadlock. The numbers are chosen so that this happens well
+		// before the child gets to read its stdin.
+		const n = 40
+		tokens := make([]string, 0, n+1)
+		for i := 0; i < n; i++ {
+			tokens = append(tokens, "long:5000")
+		}
+		tokens = append(tokens, "stdin")
+		big := strings.Repeat("y", 20000) + "\n"
+		r := runTea(t, tea([]string{
+			"-c", "-p", "^x", "-i", big,
+			"-c", "-p", "^input:", "--close",
+			"-c", "-m", "."},
+			emit(tokens...)...)...)
+		// n long lines + n echoed inputs + "eof", each marked with a dot
+		expect(t, r, strings.Repeat(".", 2*n+1), "", 0)
+	})
 }
 
 func TestNoInputForFires(t *testing.T) {

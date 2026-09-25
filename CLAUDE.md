@@ -42,8 +42,8 @@ Tests live in two places:
   color tests because fatih/color disables itself when stdout is not a TTY). Cross-stream ordering is not
   deterministic, so tests that depend on it put `sleep:` tokens between lines.
 
-Not covered because not implemented: `--send-input`, `--send-input-file`, `--timeout`, `--or-timeout`,
-`--min-match-time`, stdin forwarding.
+Not covered because not implemented: `--send-input-file`, `--timeout`, `--or-timeout`, `--min-match-time`, stdin
+forwarding.
 
 `go.mod` declares `go 1.25`; the code relies on Go 1.23+ `time.Timer.Reset` semantics (no manual channel draining).
 
@@ -89,7 +89,11 @@ commands run. `--next-line` breaks the loop; `--skip-to` sets `cmdIdx` forward.
 `--next-line`, `--skip-to`). Line-specific actions (mark/prefix/suffix/color/send-to) live only in `processLine`. A new
 action goes in `applyActions` unless it needs the `Line`.
 
+`--send-input` and `--close` are `stdInRequest`s sent on `chStdInIn`; one `WriteStdIn` goroutine serves them in
+order through `unboundedQueue`, so a processor never blocks on the child's stdin (which could deadlock against the
+child's stdout). The close is queued after the line's inputs. Writes to an already closed stdin log a warning.
+`main()` closes `chStdInIn` after the processors finish and waits for the writer before `cmd.Wait()`.
+
 `--timeout`, `--or-timeout`, `--min-match-time` are parsed and rejected in `validate.go` as not implemented; a design
 sketch for them is in the big comment inside `processLine`. `--send-input-file` parses but `log.Fatal`s at runtime.
-Output writing to the child's stdin (`chStdInIn`) is a 1-slot buffered channel with the consumer commented out in
-`main()`, so a second `--send-input` action would block — this is a known unfinished area.
+Forwarding tea's own stdin (`ReadStdIn`, commented out in `main()`) would be another producer on `chStdInIn`.

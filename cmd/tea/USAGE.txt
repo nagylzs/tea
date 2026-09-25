@@ -187,7 +187,10 @@ Input manipulation actions:
 
 -i|--send-input INPUT
 	Input action: specify an input value that will be written to stdin of PROGRAM when the command is executed.
-	Please note that you need to add a newline at the end of INPUT if you want to send it to PROGRAM.
+	Please note that you need to add a newline at the end of INPUT if you want to send it to PROGRAM. Inputs are
+	written in the order the commands executed them, and they are queued: PROGRAM not reading its stdin never delays
+	the processing of its output. If stdin of PROGRAM is already closed (see --close, or because PROGRAM has exited),
+	then the input is dropped and a warning is written to the stderr of tea.
 
 -f|--send-input-file FILENAME
 	Input file action: specify an input file whose contents will be written to stdin of PROGRAM when the command is
@@ -196,7 +199,8 @@ Input manipulation actions:
 	have a newline at the end of the file, then a last newline won't be sent to PROGRAM.
 
 --close
-	Close stdin of PROGRAM.
+	Close stdin of PROGRAM. The close is performed after the current line has been processed by all commands, so
+	--send-input values of the same line are written before stdin is closed.
 
 Exit code and signaling actions:
 

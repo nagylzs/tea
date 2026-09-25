@@ -115,9 +115,14 @@ func main() {
 		}()
 	}
 
-	chStdInIn := make(chan string, 1)
+	// --send-input and --close requests from all processors go through one
+	// writer goroutine so that they reach the child's stdin in order.
+	chStdInIn := make(chan stdInRequest)
+	wgStdIn := sync.WaitGroup{}
+	wgStdIn.Add(1)
+	go WriteStdIn(m.StdIn, chStdInIn, &wgStdIn)
+	// TODO: forward tea's own stdin to the child as another producer of chStdInIn
 	//go ReadStdIn(os.Stdin, m.Opts.LineBufferSize, chStdInIn)
-	//go WriteData(m.StdIn, chStdInIn, nil)
 
 	chStdOutOut := make(chan string, 1)
 	chStdErrOut := make(chan string, 1)
@@ -184,6 +189,7 @@ func main() {
 		wgProc.Wait()
 		close(chStdOutOut)
 		close(chStdErrOut)
+		close(chStdInIn)
 	}()
 
 	wgWrite := sync.WaitGroup{}
@@ -192,6 +198,7 @@ func main() {
 	go WriteData(os.Stderr, chStdErrOut, &wgWrite)
 
 	wgWrite.Wait()
+	wgStdIn.Wait()
 	err = cmd.Wait()
 
 	ec := m.FixedExitCode.Load()
@@ -237,7 +244,70 @@ func WriteData(writer io.WriteCloser, ch chan string, wg *sync.WaitGroup) {
 	}
 }
 
-func ProcessLines(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, chIn LineChannel, chStdOutOut chan string, chStdErrOut chan string, wgProc *sync.WaitGroup) {
+// stdInRequest is one item for the child's stdin: either data to write or a
+// request to close the pipe.
+type stdInRequest struct {
+	data  string
+	close bool
+}
+
+// unboundedQueue returns a channel that yields everything sent to in, in order,
+// while never blocking the sender. Line processing must not block on the child
+// reading its stdin: if it did, tea would stop reading the child's stdout, and
+// a child that writes a lot before it reads stdin would deadlock with tea.
+func unboundedQueue(in <-chan stdInRequest) <-chan stdInRequest {
+	out := make(chan stdInRequest)
+	go func() {
+		defer close(out)
+		var queue []stdInRequest
+		for in != nil || len(queue) > 0 {
+			var send chan<- stdInRequest
+			var head stdInRequest
+			if len(queue) > 0 {
+				send = out
+				head = queue[0]
+			}
+			select {
+			case req, ok := <-in:
+				if !ok {
+					in = nil
+					continue
+				}
+				queue = append(queue, req)
+			case send <- head:
+				queue = queue[1:]
+			}
+		}
+	}()
+	return out
+}
+
+// WriteStdIn serves --send-input and --close requests on the child's stdin, in
+// the order they were issued. Once stdin is closed (by --close, or because the
+// child exited) further input is dropped with a warning instead of killing tea.
+func WriteStdIn(w io.WriteCloser, ch chan stdInRequest, wg *sync.WaitGroup) {
+	defer wg.Done()
+	closed := false
+	for req := range unboundedQueue(ch) {
+		switch {
+		case req.close && closed:
+			// closing twice is harmless
+		case req.close:
+			closed = true
+			if err := w.Close(); err != nil {
+				log.Printf("warning: cannot close stdin of PROGRAM: %v", err)
+			}
+		case closed:
+			log.Printf("warning: --send-input dropped, stdin of PROGRAM is already closed")
+		default:
+			if _, err := io.WriteString(w, req.data); err != nil {
+				log.Printf("warning: cannot write to stdin of PROGRAM: %v", err)
+			}
+		}
+	}
+}
+
+func ProcessLines(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan stdInRequest, chIn LineChannel, chStdOutOut chan string, chStdErrOut chan string, wgProc *sync.WaitGroup) {
 	for cmdIdx := range *commands {
 		(*commands)[cmdIdx].ResetStarted()
 	}
@@ -281,9 +351,9 @@ ForLoop:
 // input, exit code overrides, --disable/--enable/--toggle, --next-line and --skip-to.
 // It is shared by processLine and processTimedCommands. cmdIdx is the index of the
 // *next* command to evaluate and is rewritten by --skip-to. closeStdIn is set when
-// --close-stdin is requested; the caller closes the pipe after the loop. It returns
+// --close is requested; the caller queues the close after the loop. It returns
 // true when the caller must stop evaluating further commands (--next-line).
-func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, a *opts.CommandActions, cmdIdx *int, closeStdIn *bool) bool {
+func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan stdInRequest, a *opts.CommandActions, cmdIdx *int, closeStdIn *bool) bool {
 	if a.Signal != nil {
 		if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
 			log.Fatal(err)
@@ -291,7 +361,7 @@ func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn
 	}
 
 	if a.Input != nil {
-		chStdInIn <- *a.Input
+		chStdInIn <- stdInRequest{data: *a.Input}
 	}
 
 	if a.InputFile != nil {
@@ -348,7 +418,7 @@ func applyActions(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn
 	return false
 }
 
-func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, lastLineArrived time.Time, chStdInIn chan string, chStdOutOut chan string) {
+func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, lastLineArrived time.Time, chStdInIn chan stdInRequest, chStdOutOut chan string) {
 	// go over all commands
 	cmdIdx := 0
 	closeStdIn := false
@@ -380,14 +450,13 @@ func processTimedCommands(commands *[]opts.Command, cmdIndices map[string]int, l
 	}
 
 	if closeStdIn {
-		if err := m.StdIn.Close(); err != nil {
-			log.Fatal(err)
-		}
+		// queued after this line's --send-input requests, so they are written first
+		chStdInIn <- stdInRequest{close: true}
 	}
 
 }
 
-func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan string, line Line, chStdErrOut chan string, chStdOutOut chan string) {
+func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn chan stdInRequest, line Line, chStdErrOut chan string, chStdOutOut chan string) {
 	// Perform LineEnabled / LineDisabled at the beginning of the line
 	for i := range *commands {
 		cmd := &(*commands)[i]
@@ -486,9 +555,8 @@ func processLine(commands *[]opts.Command, cmdIndices map[string]int, chStdInIn 
 	}
 
 	if closeStdIn {
-		if err := m.StdIn.Close(); err != nil {
-			log.Fatal(err)
-		}
+		// queued after this line's --send-input requests, so they are written first
+		chStdInIn <- stdInRequest{close: true}
 	}
 
 	var format = func(fmt string, a ...interface{}) string {
