@@ -40,4 +40,9 @@ jobs:
     - name: Create GitHub release
       env:
         GH_TOKEN: ${{ github.token }}
-      run: gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-from-tag
+      run: |
+        # actions/checkout turns the annotated tag into a lightweight one (actions/checkout#290);
+        # fetch the real tag object again so that --notes-from-tag sees the annotation
+        git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+        test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag || { echo "$GITHUB_REF_NAME is not an annotated tag"; exit 1; }
+        gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-from-tag
