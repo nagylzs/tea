@@ -24,7 +24,11 @@ type Type struct {
 	ProgramArgs    []string
 }
 
-var Opts = Type{ListSignals: false, Help: false, ShowVersion: false, LineBufferSize: 65535, Commands: make([]Command, 0)}
+var Opts = defaultOpts()
+
+func defaultOpts() Type {
+	return Type{LineBufferSize: 65535, Commands: make([]Command, 0)}
+}
 
 var argIdx = 0  // arg index
 var cmdIdx = -1 // block index
@@ -231,12 +235,14 @@ func internalParseArgs() error {
 		case SetSuffix:
 			currentActions().SetSuffix, err2 = popStringPArg(arg)
 		case FgColor:
-			attr, err2 := popColorFgAttrArg(arg)
+			var attr color.Attribute
+			attr, err2 = popColorFgAttrArg(arg)
 			if err2 == nil {
 				changeColorAttribute(attr)
 			}
 		case BgColor:
-			attr, err2 := popColorBgAttrArg(arg)
+			var attr color.Attribute
+			attr, err2 = popColorBgAttrArg(arg)
 			if err2 == nil {
 				changeColorAttribute(attr)
 			}

@@ -26,7 +26,19 @@
 - [x] `--line-enabled`/`--line-disabled` ranged over struct copies, so the per-line reset never took effect.
 - [x] Color was not applied to the line value when writing to stderr (USAGE.txt promises both streams).
 
+- [x] A lone `--timeout`/`--or-timeout`/`--min-match-time` was accepted and then matched every line (only the
+  combination of two was rejected). Now rejected as not implemented.
+- [x] `--skip-to` could target its own command, looping forever on a matching line.
+- [x] A line longer than `--line-buffer-size` was silently dropped together with all later output. Now fatal.
+- [x] The child's exit status message was printed to stdout. Now stderr.
+- [x] Invalid `--fg-color`/`--bg-color` names were accepted (shadowed error variable).
+- [x] `--toggle NAME` with an unknown NAME passed validation and crashed at runtime.
+- [ ] `--mark` together with `--send-to-stderr` (or `--mark-stderr` with `--send-to-stdout`): the code picks the
+  mark by *output* stream, USAGE.txt describes `--mark` by *input* stream. Decide and document; not tested.
+- [ ] USAGE.txt says `--toggle` cannot toggle its own command, but nothing enforces it (it works, toggling itself off).
+
 ## Tests
 
-- [ ] No Go tests. Add table-driven tests for `internal/opts` (parser + validator) and end-to-end tests that run
-  `tea` against a small script (e.g. `test/test03.py`) for signal, exit-code and idle-timeout behaviour.
+- [x] Table-driven tests for `internal/opts` (parser + validator) in `internal/opts/parser_test.go`, end-to-end tests
+  in `test/e2e_test.go` driving python children. See CLAUDE.md.
+- [ ] USAGE.txt example uses `--no-input-for 10s`; the option is `--no-input-for-duration`.

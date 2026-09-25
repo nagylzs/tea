@@ -201,7 +201,7 @@ func main() {
 	} else {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			fmt.Println(exitErr.Error())
+			fmt.Fprintln(os.Stderr, exitErr.Error())
 			os.Exit(exitErr.ExitCode())
 		}
 	}
@@ -214,6 +214,10 @@ func ReadLines(reader io.ReadCloser, bufSize int, inStdErr bool, ch LineChannel,
 	for scanner.Scan() {
 		line := scanner.Text()
 		ch <- Line{line, inStdErr, inStdErr, nil, nil, nil, &NewLine}
+	}
+	if err := scanner.Err(); err != nil {
+		// e.g. bufio.ErrTooLong when a line exceeds --line-buffer-size
+		log.Fatal(err)
 	}
 	if wgRead == nil {
 		close(ch)

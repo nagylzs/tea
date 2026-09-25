@@ -26,9 +26,24 @@ python3 scripts/build.py            # release build -> dist/<os>/<arch>/tea and 
 ./tea --version                     # "unset unset unset" unless built via scripts/build.py
 ```
 
-There are no Go tests. `test/` (git-ignored) holds sample log data and `test/test03.py`, a script that endlessly
-writes lines to stderr with a 0.2s delay — useful for manually exercising stderr handling and
-`--no-input-for-duration`, e.g. `go run cmd/tea/tea.go -c --std-err -m . -- python3 -u test/test03.py`.
+```bash
+go test ./...                       # what CI runs (after go vet); needs python3 and stdbuf on PATH
+go test ./internal/...              # parser + validator only, fast
+go test ./test/ -run TestSignal -v  # one end-to-end test
+```
+
+Tests live in two places:
+
+- `internal/opts/parser_test.go` — table-driven tests of the argument parser and validator. They reset the
+  package globals (`Opts`, `argIdx`, `cmdIdx`) and set `os.Args` directly, so keep them in package `opts`.
+- `test/e2e_test.go` (package `e2e`) — end-to-end tests. `TestMain` builds the binary into a temp dir and every test
+  runs it against a python child: `test/emit.py` (scriptable stdout/stderr/sleep/exit/stdin tokens), `test/signals.py`
+  (prints received signals, exits on SIGTERM) and `test/withpty.py` (runs tea under a pseudo-terminal, needed for the
+  color tests because fatih/color disables itself when stdout is not a TTY). Cross-stream ordering is not
+  deterministic, so tests that depend on it put `sleep:` tokens between lines.
+
+Not covered because not implemented: `--send-input`, `--send-input-file`, `--timeout`, `--or-timeout`,
+`--min-match-time`, stdin forwarding.
 
 `go.mod` declares `go 1.25`; the code relies on Go 1.23+ `time.Timer.Reset` semantics (no manual channel draining).
 

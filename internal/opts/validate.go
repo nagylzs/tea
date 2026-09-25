@@ -98,7 +98,7 @@ func validateCommand(cmdIdx int) error {
 		return errors.New("only a single timeout based condition can be given for a command")
 	}
 
-	if nNonNullDurations(c.AndTimeout, c.OrTimeout, c.MinMatchTime) > 1 {
+	if nNonNullDurations(c.AndTimeout, c.OrTimeout, c.MinMatchTime) > 0 {
 		return errors.New("--timeout, --or-timeout and --min-match-time is not implemented yet")
 	}
 
@@ -146,14 +146,18 @@ func validateCommand(cmdIdx int) error {
 	if err != nil {
 		return err
 	}
+	err = checkNameRefs(a.Toggle, nil, "--toggle", "")
+	if err != nil {
+		return err
+	}
 
 	if a.SkipTo != nil {
 		i, exists := Opts.CmdIdx[*a.SkipTo]
 		if !exists {
 			return fmt.Errorf("--skip-to: cannot find command with name %v", *a.SkipTo)
 		}
-		if i < cmdIdx {
-			return fmt.Errorf("--skip-to: cannot skip to previous command %v", *a.SkipTo)
+		if i <= cmdIdx {
+			return fmt.Errorf("--skip-to: cannot skip to itself or to a previous command %v", *a.SkipTo)
 		}
 	}
 
