@@ -27,7 +27,8 @@ python3 scripts/build.py [ARCH...]  # static release build -> dist/linux/<arch>/
 ```
 
 CI (`.github/workflows/go.yml`) vets, tests and runs the build script on every push; `release.yml` does the same on a
-`v*` tag and attaches `tea-linux-{amd64,arm64}` plus `SHA256SUMS` to a GitHub release.
+`v*` tag and attaches `tea-linux-{amd64,arm64}` plus `SHA256SUMS` to a GitHub release whose notes are the annotated
+tag message (`git tag -a vX.Y.Z -F notes.md`).
 
 ```bash
 go test ./...                       # what CI runs (after go vet); needs python3 and stdbuf on PATH
