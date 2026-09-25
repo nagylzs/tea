@@ -1,305 +1,323 @@
-tea COMMAND [COMMAND...] -- PROGRAM [ARG...]
-tea --version
-tea -h | --help
-tea -l | --list-signals
-
-tea is a line oriented program, it should be used in conjunction with programs that are reading and writing lines of
-text. It runs PROGRAM with ARGS (start a new process), processes its output line by line, and runs the specified
-COMMAND(s) for each line. In addition, tea also forwards stdin, stdout and stderr. By default, tea will read the exit
-code of PROGRAM and use that as its own exit code. When lines are processed, they do not include the trailing newline
-character, but the default output suffix adds the trailing newline before sending it to the output.
-
-'tea' can be compared to 'tee'. Instead of an arbitrary input stream, it works on the output of the process that is
-started by tea itself, making it much easier to send conditional signals to the process.
-
-You must give at least one command. Commands can be started with -c or --command. For each command, you can specify
-conditions, actions and other options. Conditions decide if the action needs to be executed. Actions describe
-what needs to be done when the command's condition evaluate to true. Other options affect the behaviour of the command.
-tea will process each line one by one, and for each line, it will process each command one by one, in their given order.
-
-Global options:
-
--h|--help
-	Print help/usage and exit.
-
--l|--list-signals
-	Print a list of available signals and their numbers and exit.
-
---pid FILE
-	Write the process id of PROGRAM into FILE. The FILE must not exist, and it will be deleted after tea exits.
-
---line-buffer-size SIZE
-    tea stores lines of data in a buffer. The default line buffer size is 65535 bytes. You can change the default
-    line buffer size with this global option. If a line exceeds the length of the buffer size, then tea exits with
-    error.
-
---no-stdbuf
-    tea uses stdbuf(1) to request line buffered I/O on PROCESS. Specifying --no-stdbuf will omit stdbuf and start
-    PROGRAM directly. For most programs using glibc, the default behaviour is to use fully buffered I/O. After all,
-    it is up to the PROGRAM to do the buffering on its output. You should consult the documentation of PROGRAM for
-    details. For example, most python programs should be started with PYTHONUNBUFFERED env or "python -u" to prevent
-    buffering.
-
---no-stdin
-    By default, tea forwards its own standard input to PROGRAM, and closes the standard input of PROGRAM when its own
-    standard input reaches end of file - just as if PROGRAM had been started without tea. With --no-stdin, tea does not
-    read its own standard input at all: the standard input of PROGRAM is only written by --send-input and
-    --send-input-file, and only closed by --close (or when PROGRAM exits). Use --no-stdin when tea runs in the
-    background of an interactive shell (otherwise the shell stops it with SIGTTIN as soon as it reads the terminal),
-    or when the standard input of tea is not meant for PROGRAM. In particular, when tea is started with its standard
-    input at end of file (e.g. from cron, or with < /dev/null) and you rely on --send-input, use --no-stdin: otherwise
-    the end of file is forwarded immediately and the standard input of PROGRAM is closed before anything is sent.
-
---deadline DURATION
-    Give up after DURATION: stop PROGRAM with the stop signal and exit with code 1, unless tea has exited before.
-    This is a shorthand for a last command "-c --timeout DURATION --exit 1" (see --timeout and --exit); write that
-    command out if you need a different exit code. "tea --deadline 30s -- PROGRAM" runs PROGRAM with a time limit.
-
---stop-signal SIGNAL
-    The signal that the --exit action sends to PROGRAM. The default is SIGTERM. SIGNAL is given like for --signal.
-
---share-commands
-    By default, tea will create two copies of the given commands. One command chain will process the lines read from
-    stdout, and the other will process lines read from stderr, in parallel. It also means, that command states and their
-    actions (e.g. --disable, --enable, --toggle) and all conditions will work independently for stdout and stderr, the
-    only common one being --set-exit-code. By specifying --share-commands, tea will create a single chain of commands,
-    and use them for both data sources. All lines will be serialized and processed on a single thread, and command
-    state changing actions like --disable or --toggle will work on the same and only command chain.
-
---share-streams
-    This will unify stdout and stderr of PROGRAM into a single stream of lines, and process them sequentially.
-    Using this option will treat all lines as they came on stdout. With this option, some command arguments are not
-    meaningful (--mark-stderr, --std-all, --std-err) and there are some that are almost useless (e.g. --send-to-stdout
-    is useless unless you have called --sent-to-stderr in a previous command and want to undo that). You cannot combine
-    --shared-command with --share-streams, because --share-streams will always use a single (unified) input stream,
-    and there can only be a single chain of commands.
-
-Command level options:
-
--c|--command [NAME]
-	Start a new command. The optional NAME can be used to reference the command from other commands. Names must not be
-	empty, cannot start with "-" dash and must be unique. The first command is started implicitly by the first command
-	level option, so -c can be omitted for it (unless you want to name it): "tea -p ready -s SIGINT -- PROGRAM" is
-	the same as "tea -c -p ready -s SIGINT -- PROGRAM".
-
---disabled
-	Create a command in disabled state. Conditions of a disabled command are not evaluated, and its actions
-	are not performed.
-
---line-disabled
-	Create a command that becomes disabled at the beginning of each line.
-
---line-enabled
-	Create a command that becomes enabled at the beginning of each line.
-
-Pattern matching conditions (matching) - please note that pattern matching conditions can only change value when a
-new line appears. Patterns work on lines. Lines does not contain their line-ending newline characters.
-
--p|--pattern PATTERN
-	Specify a regular expression. One command can have zero or multiple patterns assigned. When no pattern is given,
-	then the command matches any line. When multiple patterns are given, then all of them must match, unless the
-	--or option is given (see below) The pattern follows GoLang regexp syntax, e.g. "(?iU)foo" will match
-	case-insensitive (i) and ungreedy (U). For details,  see https://pkg.go.dev/regexp/syntax
+NAME
+    tea - run a program, watch its output line by line, and act on what it prints
+
+SYNOPSIS
+    tea [GLOBAL OPTION...] COMMAND [COMMAND...] -- PROGRAM [ARG...]
+    tea --deadline DURATION -- PROGRAM [ARG...]
+    tea -h | --help
+    tea --version
+    tea -l | --list-signals
+
+DESCRIPTION
+    tea starts PROGRAM as a child process, reads its standard output and standard error line by line, and runs a chain
+    of COMMANDs on every line. A command is a set of conditions (which lines it applies to) and actions (what to do
+    with them): rewrite or color the line, send a signal to PROGRAM, write to its standard input, or decide the exit
+    code of tea. Lines that no command changes pass through unchanged, so tea can be dropped in front of any
+    program. Typical uses are "wait until the program prints X, then stop it", "give up if X does not appear within
+    two minutes" and "answer a prompt".
+
+    The name is a nod to tee(1): like tee, tea sits in the middle of a data stream. Unlike tee, the stream is the
+    output of a process that tea itself started, which is what makes it possible to act on the process.
+
+  Lines and commands
+    Lines are read without their trailing newline; the default output suffix adds it back. For every line, tea goes
+    through the commands in the order they were given. A command applies to a line when it is enabled, the line
+    comes from a stream the command listens to (see --std-err, --std-all) and its patterns match. When it applies,
+    all of its actions are performed, then the next command is evaluated, unless an action changed the flow
+    (--next-line, --skip-to). Output actions of several commands combine by "last one wins": the last mark, prefix,
+    suffix or color set on a line is the one written.
+
+    The first command starts with the first command level option. Further commands start with -c. A command may be
+    named (-c NAME) so that other commands can enable, disable, toggle or jump to it.
+
+  Streams and command chains
+    By default tea keeps two copies of the command chain, one for standard output and one for standard error, and
+    processes the two streams in parallel. Command state (enabled or disabled) is therefore independent per stream,
+    and so is everything that depends on it. The exit code (--set-exit-code, --exit) is shared. --share-commands
+    keeps a single chain for both streams; --share-streams merges both streams into one, as if everything came from
+    standard output. Time based commands are always single instances, see below.
+
+  Time based commands
+    A command with --no-input-for or --timeout has no "current line". It is evaluated by a timer, once per second,
+    independently of the chains, and there is exactly one instance of it however many chains there are: --enable,
+    --disable and --toggle from any chain act on that instance, and its own --enable, --disable and --toggle actions
+    act on every chain. Time based commands cannot use patterns, --std-err, --std-all or any output action.
+
+  Standard input
+    tea forwards its own standard input to PROGRAM and closes PROGRAM's standard input when its own reaches end of
+    file, just as if PROGRAM had been started directly. Commands can also write to PROGRAM's standard input
+    (--send-input, --send-input-file) and close it (--close). All of this goes through one ordered queue, so PROGRAM
+    receives everything in the order it was produced, and PROGRAM not reading its standard input never delays the
+    processing of its output. --no-stdin turns the forwarding off; see there for when you need it.
+
+  Output buffering
+    tea can only react to a line once PROGRAM has actually written it. Many programs buffer their standard output
+    when it is not a terminal and flush it only when the buffer is full or when they exit, which would make tea see
+    nothing for a long time and then everything at once. What helps depends on how PROGRAM was written:
+
+    C and C++ (glibc stdio, dynamically linked)
+        By default tea runs PROGRAM through stdbuf(1), which asks glibc to line-buffer standard output and standard
+        error. stdbuf replaces itself with PROGRAM (same process id) after setting the environment, so nothing else
+        changes. It has no effect on statically linked programs, on setuid programs, on programs that set their own
+        buffering, and on programs that do not use glibc (for example Alpine/musl binaries); use --no-stdbuf if
+        stdbuf itself causes trouble (it prints a warning when its helper library cannot be loaded).
+    Python
+        Ignores stdbuf and block-buffers standard output when it is a pipe. Start it as "python3 -u ..." or set
+        PYTHONUNBUFFERED=1. Standard error is line-buffered on recent versions.
+    Perl, Ruby
+        Ignore stdbuf and block-buffer standard output when it is a pipe. Perl: "$| = 1" or "perl -e '$|=1; ...'".
+        Ruby: "$stdout.sync = true". Both can also flush explicitly.
+    Go, Rust, Node.js, Java
+        Ignore stdbuf, but usually do not need it: Go writes to os.Stdout unbuffered, Rust's stdout is
+        line-buffered, Node.js writes to pipes synchronously, and Java's System.out flushes on println. Anything
+        that adds its own buffering (bufio.Writer, BufWriter, BufferedWriter) must be flushed by the program.
+    Shell scripts
+        Shell builtins (echo, printf) are flushed immediately, but every external program the script runs has its
+        own buffering, as described above. stdbuf's setting is inherited by those programs.
+    Programs that change behaviour on a terminal
+        Some programs print progress with carriage returns and no newline, or print different (often less) output
+        when standard output is not a terminal. tea only sees complete lines, so progress bars drawn with "\r" are
+        invisible to it until a newline arrives. If a program insists on a terminal, run it under script(1) or
+        unbuffer(1) and let tea watch that.
+
+  Exit status
+    By default tea exits with the exit code of PROGRAM. If PROGRAM is terminated by a signal, tea exits with 255
+    and reports the signal on standard error. --set-exit-code and --exit override this; --clear-exit-code restores
+    it. Usage errors and fatal runtime errors (a line longer than --line-buffer-size, an unreadable
+    --send-input-file) exit with 1.
+
+GLOBAL OPTIONS
+    Global options may appear anywhere before "--".
+
+    -h, --help
+        Print this help and exit.
+
+    --version
+        Print the build time, branch and commit and exit.
+
+    -l, --list-signals
+        List the available signal names and numbers and exit.
+
+    --pid FILE
+        Write the process id of PROGRAM to FILE when it has started, and delete FILE when tea exits. FILE must not
+        exist beforehand.
+
+    --line-buffer-size SIZE
+        The longest line tea accepts, in bytes. The default is 65535, the minimum is 1024. A longer line is a fatal
+        error.
+
+    --no-stdbuf
+        Start PROGRAM directly instead of through stdbuf(1). See "Output buffering" above.
+
+    --no-stdin
+        Do not read tea's own standard input. PROGRAM's standard input is then written only by --send-input and
+        --send-input-file, and closed only by --close or when PROGRAM exits. You need this in two situations:
+        when tea runs in the background of an interactive shell, because a background job that reads the terminal
+        is stopped with SIGTTIN; and when tea is started with its standard input already at end of file (from
+        cron, or with "< /dev/null") while a command uses --send-input, because the end of file would otherwise be
+        forwarded immediately and PROGRAM's standard input closed before anything could be sent.
+
+    --stop-signal SIGNAL
+        The signal that --exit and --deadline send to PROGRAM. The default is SIGTERM. SIGNAL is written as for
+        --signal.
+
+    --deadline DURATION
+        Give up after DURATION unless tea has finished by then: stop PROGRAM with the stop signal and exit with
+        code 1. Equivalent to a final command "-c --timeout DURATION --exit 1"; write that command out if you need
+        another exit code. On its own, "tea --deadline 30s -- PROGRAM" runs PROGRAM with a time limit.
+
+    --share-commands
+        Use a single command chain for both streams. Lines from standard output and standard error are processed
+        one at a time by the same commands, so --disable, --enable and --toggle affect both streams. Cannot be
+        combined with --share-streams.
+
+    --share-streams
+        Merge standard output and standard error of PROGRAM into one stream and treat every line as standard
+        output. --std-err, --std-all and --mark-stderr are rejected with this option. Cannot be combined with
+        --share-commands.
+
+COMMANDS
+    A command consists of command level options. Conditions select lines, actions do something with them, and a
+    few options control the command's state.
+
+  Starting a command
+    -c, --command [NAME]
+        Start a new command. The first command is started implicitly by the first command level option, so -c is
+        only needed to start further commands or to give the first one a name. NAME must not be empty, must not
+        start with "-" and must be unique.
+
+  Command state
+    A disabled command is skipped entirely: its conditions are not evaluated and its actions are not performed.
+    Commands are enabled unless created with --disabled; --enable, --disable and --toggle change the state at run
+    time. Enabling a disabled command also restarts its --timeout clock.
+
+    --disabled
+        Create the command disabled.
+
+    --line-enabled
+        Enable the command at the beginning of every line.
+
+    --line-disabled
+        Disable the command at the beginning of every line, so that it only applies to the rest of a line on which
+        an earlier command enabled it.
+
+  Pattern conditions
+    -p, --pattern PATTERN
+        A regular expression in Go syntax (https://pkg.go.dev/regexp/syntax); for example "(?i)ready" matches
+        case-insensitively. A command may have any number of patterns. With no pattern, the command applies to every
+        line it listens to. With several patterns, all of them must match unless --or is given.
+
+    --or
+        Apply when at least one pattern matches instead of all. Requires at least one pattern.
+
+    --no
+        Invert the match: apply when none of the patterns match, or, together with --or, when at least one pattern
+        does not match.
+
+    --std-err
+        Listen to standard error instead of standard output.
+
+    -a, --std-all
+        Listen to both standard output and standard error.
+
+  Time based conditions
+    See "Time based commands" above for what these commands can and cannot do. Durations are written like 10s,
+    1m30s or 500ms; conditions are checked once per second.
+
+    --no-input-for DURATION
+        Apply when no line has arrived on either stream for DURATION. The actions run once per quiet period: after
+        they ran, the command waits for a new line and another quiet DURATION before it applies again. Add
+        "--disable NAME" (with -c NAME) if it should apply only once overall.
+
+    -t, --timeout DURATION
+        Apply once DURATION has elapsed since the command was last enabled: since PROGRAM was started for a command
+        that is enabled from the start, or since --enable or --toggle enabled a command created with --disabled.
+        The actions run once. Enabling the command again restarts the clock, which makes deadlines relative to an
+        event possible (see EXAMPLES).
+
+    --or-timeout DURATION, --min-match-time DURATION
+        Reserved; not implemented.
+
+  Output actions
+    These change how the current line is written. Lines from standard output go to standard output and lines from
+    standard error to standard error unless redirected. When several commands set the same property on a line, the
+    last one wins.
+
+    --set-prefix PREFIX
+        Write PREFIX before the line. The default prefix is empty.
+
+    --set-suffix SUFFIX
+        Write SUFFIX after the line. The default suffix is a newline, so a suffix without one joins lines.
+
+    -m, --mark MARK
+        For a line read from standard output, write MARK instead of the line, without prefix or suffix. "-m ."
+        prints one dot per line; an empty MARK suppresses the line. The mark is chosen by the stream the line was
+        read from, not by where it is written.
 
---or
-	Match if at least one pattern match. It is an error to specify --or without giving any pattern.
+    --mark-stderr MARK
+        Like --mark, for lines read from standard error.
 
---no
-	Invert pattern match. The command will match if none of its patterns match. When used together with --or, the
-	command will match if at least one of its patterns do not match.
+    --send-to-stdout, --send-to-stderr
+        Write the line to the given stream regardless of where it was read from. A later command can redirect it
+        again.
 
---std-err
-	Specifying this flag means that the command's patterns work on the standard error of PROGRAM. (The default is to
-	work on the standard output.)
+  Color actions
+    Colors and attributes are written as ANSI escape sequences around the line, its prefix, its suffix or its mark.
+    They are only emitted when tea's standard output is a terminal. Attributes given in one command combine; the
+    color of the last command that set one wins, it does not modify the previous one. COLOR is one of black, red,
+    green, yellow, blue, magenta, cyan, white, or a high intensity variant hi-black, hi-red, hi-green, hi-yellow,
+    hi-blue, hi-magenta, hi-cyan, hi-white.
 
--a|--std-all
-	Specifying this flag means that the command's patterns work on both stdout and stderr of PROGRAM. (The default is
-	to work on the standard output.)
+    --fg-color COLOR
+        Foreground color.
 
-TIME BASED CONDITIONS
+    --bg-color COLOR
+        Background color.
 
-Time based commands have no "current line". They cannot use patterns, --std-err or --std-all, nor any output
-manipulation action (--mark, --mark-stderr, --set-prefix, --set-suffix, --send-to-stdout, --send-to-stderr, colors).
-Their conditions are checked once per second, so their actions run within one second after the condition became
-true. There is exactly one instance of each time based command, even when stdout and stderr are processed by
-separate command chains (see --share-commands): --enable, --disable and --toggle from either chain act on that single
-instance, and the --enable, --disable and --toggle actions of a time based command act on both chains.
+    --bold, --faint, --italic, --underline, --blink, --blink-rapid
+        Text attributes.
 
---no-input-for DURATION
-	Idle condition. The condition becomes true when no line has appeared on stdout or stderr of PROGRAM for DURATION.
-	The actions run once per quiet period: after they ran, the command does not fire again until a new line appears
-	and PROGRAM goes quiet for DURATION again. Add --disable NAME (with -c NAME) if it should fire only once overall.
+  Input actions
+    See "Standard input" above for ordering and forwarding.
 
--t|--timeout DURATION
-	Deadline condition. The condition becomes true once DURATION has elapsed since the command was last enabled: for
-	a command that is enabled from the start, since PROGRAM was started; for a command created with --disabled, since
-	it was enabled by --enable or --toggle. The actions run once. Enabling the command again (after it disabled
-	itself, or after --disable and --enable) restarts the clock, so a deadline can also be relative to an event seen
-	in the output (see the examples).
+    -i, --send-input INPUT
+        Write INPUT to PROGRAM's standard input, exactly as given: tea does not interpret escape sequences, so add a
+        trailing newline yourself if PROGRAM expects a line (in bash, $'y\n' is the string y followed by a newline).
+        If PROGRAM's standard input is already closed, or PROGRAM has exited, the input is dropped and a warning is
+        written to tea's standard error.
 
---or-timeout DURATION, --min-match-time DURATION
-	Reserved, not implemented yet.
-
-Output stream manipulation actions, they cannot be used with time based commands:
+    -f, --send-input-file FILE
+        Write the contents of FILE to PROGRAM's standard input. FILE is read when the action runs, so it need not
+        exist when tea starts, but it must exist by then: an unreadable FILE is a fatal error. Within one command,
+        --send-input is written before --send-input-file. A missing final newline is not added.
 
---set-prefix PREFIX
-    Add this prefix to the line before sending to output. The default prefix is the empty string. When multiple commands
-    specify a prefix, then the last one takes precedence.
-
---set-suffix SUFFIX
-    Add this suffix to the line after sending to output. The default suffix is newline (\n). When multiple commands
-    specify a prefix, then the last one takes precedence.
+    --close
+        Close PROGRAM's standard input, after the inputs of the current line have been written.
 
---send-to-stdout
-    By default, lines read from stdout will be written to stdout, and lines read from stderr will be written to stderr.
-    Using this option will force the line to be written on stdout.
+  Signal and exit code actions
+    -s, --signal SIGNAL
+        Send SIGNAL to PROGRAM. SIGNAL is a number or a name, case-insensitive, with or without the SIG prefix
+        (SIGTERM, TERM and term all work); --list-signals prints the names. Several matching commands send their
+        signals in order.
 
---send-to-stderr
-    Send line to stderr, see --send-to-stdout above
-
--m|--mark MARK
-	For every input line read from stdout, output MARK instead of the line itself. For example, "--mark ." will print
-	a dot whenever PROGRAM produces one line of output AND the command's condition is fulfilled. Specifying an empty mark
-	will suppress the stdout of PROGRAM. When multiple commands perform --mark, then the last one takes precedence.
-	This option does not change the output file for the line, only its contents. Using --mark also suppresses
-	the prefix and the postfix.
-
---mark-stderr MARK
-	Similar to --mark, but it works for lines read from stderr.
-
-Output color actions (ANSI terminal escape codes)
-
-They are applied to both stdout and stderr. They are prepended to each output line, including the original line, the
-prefix (--set-prefix) and any marks given  (--mark and --mark-stderr). Possible normal COLOR values are black, red,
-green, yellow, blue, magenta, cyan, white. High intensity variants:  hi-black, hi-red, hi-green, hi-yellow, hi-blue,
-hi-magenta, hi-cyan, hi-white. When no color action is  used, then no ANSI sequence is written to the output.
-
-Caveat: in the current implementation, only the color of the last matched command is applied (e.g. it overwrites
-the previous color, there is no support for "calculating" a color by modifying it with multiple commands).
+    -e, --set-exit-code CODE
+        Use CODE (0..255) as the exit code of tea instead of PROGRAM's. There is one exit code; the last command to
+        set it wins, and time based commands can set it between lines.
 
---fg-color COLOR
-    Set foreground color to COLOR
+    --clear-exit-code
+        Undo --set-exit-code: tea exits with PROGRAM's exit code again unless it is set once more later.
 
---bg-color COLOR
-    Set background color to COLOR
+    -x, --exit CODE
+        Stop PROGRAM with the stop signal (SIGTERM, or --stop-signal) and use CODE as the exit code of tea: the
+        usual way to say "seen what we were waiting for, done" (--exit 0) or "give up" (--exit 1). It is a shorthand
+        for "--signal STOP_SIGNAL --set-exit-code CODE" and cannot be combined with --signal, --set-exit-code or
+        --clear-exit-code in the same command; use those directly for other combinations.
 
---bold
-    Output **bold** ANSI terminal sequence
+  Control flow actions
+    --enable NAME, --disable NAME, --toggle NAME
+        Enable, disable or toggle the command called NAME, which may come before or after this one. Each may be
+        given several times in one command. A command may enable or disable itself, which is the usual way to make
+        it apply only once; it cannot toggle itself, since a disabled command never runs and could only ever switch
+        itself off.
 
---italic
-    Output **italic** ANSI terminal sequence
+    -n, --next-line
+        Stop evaluating commands for the current line. The line is written as processed so far.
 
---faint
-    Output **faint** ANSI terminal sequence
+    --skip-to NAME
+        Continue with the command called NAME, which must come later in the chain. Skipped commands are left as
+        they are. If NAME is disabled, evaluation continues with the next enabled command after it.
 
---underline
-    Output **underline** ANSI terminal sequence
+EXAMPLES
+    Wait until "operation completed" appears in the output of a program, then interrupt it:
 
---blink
-    Output **blink** ANSI terminal sequence
+        tea -p "operation completed" -s INT -- command
 
---blink-rapid
-    Output **blink rapid** ANSI terminal sequence
+    Wait until a PostgreSQL container reports that it is ready, then stop watching its logs and exit with 0. If it
+    is not ready within two minutes, stop watching and exit with 1:
 
-Input manipulation actions:
+        docker start pg && tea -p "ready to accept connections" --exit 0 --deadline 120s -- docker logs -f pg
 
--i|--send-input INPUT
-	Input action: specify an input value that will be written to stdin of PROGRAM when the command is executed.
-	Please note that you need to add a newline at the end of INPUT if you want to send it to PROGRAM. Inputs are
-	written in the order the commands executed them, and they are queued: PROGRAM not reading its stdin never delays
-	the processing of its output. Inputs are interleaved with the forwarded standard input of tea in the order they
-	occur. If stdin of PROGRAM is already closed (see --close and --no-stdin, or because PROGRAM has exited), then the
-	input is dropped and a warning is written to the stderr of tea.
+    The same without the shorthands, interrupting "docker logs" with SIGINT instead of SIGTERM:
 
--f|--send-input-file FILENAME
-	Input file action: specify an input file whose contents will be written to stdin of PROGRAM when the command is
-	executed. The file is read when the action is executed: it must exist by then (but it may not exist when tea is
-	started), and tea exits with an error if it cannot be read. The contents are queued exactly like --send-input
-	values, in the order the commands executed them; within a single command, --send-input is written before
-	--send-input-file. Please note that if you don't have a newline at the end of the file, then a last newline won't
-	be sent to PROGRAM.
+        docker start pg && tea \
+            -c -p "ready to accept connections" --set-exit-code 0 --signal SIGINT \
+            -c --timeout 120s --set-exit-code 1 --signal SIGINT \
+            -- docker logs -f pg
 
---close
-	Close stdin of PROGRAM. The close is performed after the current line has been processed by all commands, so
-	--send-input values of the same line are written before stdin is closed.
+    Reload nginx once no request has arrived for ten seconds. While waiting, print a dot per request instead of the
+    access log line:
 
-Exit code and signaling actions:
+        (tea -m . -c --no-input-for 10s --exit 0 -- tail -f /var/log/nginx/access.log) && killall -HUP nginx
 
--s|--signal SIGNAL
-	Send the given signal to PROGRAM. The signal can be given with a number, or with its name, case-insensitive, with
-	or without the SIG prefix (SIGTERM, TERM and term all work; see --list-signals). Please note, if multiple commands
-	match, then multiple signals are sent in their specified order (as long as PROGRAM is still an active process).
+    Interrupt a program 30 seconds after it prints "phase 2 started", and not before:
 
--e|--set-exit-code EXIT_CODE
-	By default, tea will read the exit code of PROGRAM and use that as its own exit code. The --set-exit-code action
-	will overwrite this to EXIT_CODE. It must be between 0 and 255. There is a single global exit code of tea.
-	When multiple commands perform this action, then the last one wins. Please note that timeout based commands
-	can performs actions between two lines.
+        tea -p "phase 2 started" --enable deadline -c deadline --disabled --timeout 30s -s INT -- command
 
---clear-exit-code
-	Clear the exit code that was possibly set by --set-exit-code. After this action has been performed, tea will return
-	to its default behaviour, read then exit code of PROGRAM and use that as its own exit code. Also see --set-exit-code
+    Answer a prompt from a script, then let the program finish on its own (--no-stdin because a script's standard
+    input may already be at end of file, which would otherwise close the installer's standard input at once):
 
--x|--exit EXIT_CODE
-	Stop PROGRAM and use EXIT_CODE as the exit code of tea: a shorthand for "--signal STOP_SIGNAL --set-exit-code
-	EXIT_CODE" where STOP_SIGNAL is SIGTERM unless changed with the global --stop-signal option. This is the usual way
-	to say "we have seen what we were waiting for, we are done" (--exit 0) or "give up" (--exit 1), see the examples.
-	It cannot be combined with --signal, --set-exit-code or --clear-exit-code in the same command; use those directly
-	if you need a different signal or a different combination.
+        tea --no-stdin -p "^Continue\? \[y/N\]" -i $'y\n' -- ./installer
 
-Branching and command control:
+    Run a program with a time limit, and color its error lines red:
 
---disable NAME
-	Disable the NAMEd command. Can reference backward and forward. Can disable itself. This action can be used multiple
-	times in a single command.
-
---enable NAME
-	Enable the NAMEd command. Can reference backward and forward. Can enable itself. This action can be used multiple
-    times in a single command.
-
---toggle NAME
-	Toggle the NAMEd command: if it was enabled then disable, if it was disabled then enable. Can reference backward
-	and forward. This action can be used multiple times in a single command. A command cannot toggle itself: since a
-	disabled command never runs, it could only ever switch itself off, which is what --disable does.
-
--n|--next-line
-	By using this flag, line processing stops at the current command, all subsequent commands will remain in their
-	previous state. The output of the currently processed line is sent to the output, and then tea continues with the
-	next line.
-
---skip-to NAME
-	Jump the given (named) command. Back references are not allowed (e.g. can only jump forward). Skipped commands
-	will remain in their previous state. If the given command is disabled, then processing starts with the next
-	enabled command (or finishes the processing of the line, if there is no next enabled command).
-
-Example usages:
-
-Send SIGINT 30 seconds after "phase 2 started" appears in the output, and not before:
-
-tea -p "phase 2 started" --enable deadline -c deadline --disabled --timeout 30s -s SIGINT -- command
-
-Wait until "operation completed" appears in the output of a program, then send SIGINT:
-
-tea -p "operation completed" -s SIGINT -- command
-
-Wait until no new request comes in for at least 10 seconds to an nginx server, then reload its settings.
-While waiting, print a dot character for each incoming request (instead of the full access line):
-
-(tea -m . -c --no-input-for 10s --exit 0 -- tail -f /var/log/nginx/access.log ) && killall -SIGHUP nginx
-
-Start watching the logs of a PostgreSQL container after it has been started, and wait until
-"ready to accept connections" appears in the logs. If the server does not start up within 120 seconds, then exit with
-code 1 instead.
-
-docker start postgresql-container && tea \
-	-p "ready to accept connections" --exit 0 --deadline 120s \
-	-- docker logs -f --since 10m postgresql-container
-
-The same, written out without the --deadline and --exit shorthands (and stopping "docker logs" with SIGINT instead
-of SIGTERM):
-
-docker start postgresql-container && tea \
-	-c -p "ready to accept connections" --set-exit-code 0 --signal SIGINT \
-	-c --timeout 120s --set-exit-code 1 --signal SIGINT \
-	-- docker logs -f --since 10m postgresql-container
-
+        tea --deadline 1h --std-err --fg-color red -- ./long-job

@@ -190,7 +190,7 @@ func expect(t *testing.T, r result, wantOut string, wantErr string, wantCode int
 func TestHelp(t *testing.T) {
 	for _, args := range [][]string{{}, {"-h"}, {"--help"}} {
 		r := runTea(t, args...)
-		if r.code != 0 || !strings.Contains(r.stdout, "tea COMMAND [COMMAND...] -- PROGRAM [ARG...]") {
+		if r.code != 0 || !strings.Contains(r.stdout, "tea [GLOBAL OPTION...] COMMAND [COMMAND...] -- PROGRAM [ARG...]") {
 			t.Errorf("%q: code=%d stdout=%q", args, r.code, r.stdout[:min(60, len(r.stdout))])
 		}
 	}

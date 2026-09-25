@@ -8,8 +8,7 @@
   - `tea -p PATTERN -s INT -- ...`
   - `tea -p PATTERN --exit 0 --deadline 120s -- ...`
   - `tea --no-input-for 10s --exit 0 -- ...`
-- [ ] Document per-runtime output buffering in USAGE.txt. `stdbuf` only affects glibc stdio; Java, Go, Node,
-  and Python (without `-u` / `PYTHONUNBUFFERED`) ignore it.
+- [x] Document per-runtime output buffering in USAGE.txt. Done, in the "Output buffering" section.
 
 ## Unfinished features
 
