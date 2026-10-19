@@ -83,9 +83,10 @@ DESCRIPTION
 
   Exit status
     By default tea exits with the exit code of PROGRAM. If PROGRAM is terminated by a signal, tea exits with 255
-    and reports the signal on standard error. --set-exit-code and --exit override this; --clear-exit-code restores
-    it. Usage errors and fatal runtime errors (a line longer than --line-buffer-size, an unreadable
-    --send-input-file) exit with 1.
+    and reports the signal on standard error. --set-exit-code, --exit and --deadline override this;
+    --clear-exit-code restores it. --ended-exit replaces PROGRAM's exit code with a fixed one, so that a PROGRAM
+    that ended on its own can be told apart from the outcomes the commands decide. Usage errors and fatal runtime
+    errors (a line longer than --line-buffer-size, an unreadable --send-input-file) exit with 1.
 
 GLOBAL OPTIONS
     Global options may appear anywhere before "--".
@@ -127,6 +128,14 @@ GLOBAL OPTIONS
         Give up after DURATION unless tea has finished by then: stop PROGRAM with the stop signal and exit with
         code 1. Equivalent to a final command "-c --timeout DURATION --exit 1"; write that command out if you need
         another exit code. On its own, "tea --deadline 30s -- PROGRAM" runs PROGRAM with a time limit.
+
+    --ended-exit CODE
+        Exit with CODE (0..255) instead of PROGRAM's exit code when PROGRAM ends and no command has set the exit
+        code (--set-exit-code, --exit, --deadline). Without it, a readiness wait cannot tell "ready" from "gone":
+        a container that stops before it is ready ends "docker logs -f" with 0, and tea would pass that 0 on as if
+        the container were ready (see EXAMPLES). PROGRAM's own failure (an exit code other than 0, or a signal) is
+        still reported on standard error. A command that stops PROGRAM with --signal alone does not set the exit
+        code, so tea then exits with CODE as well; use --exit, or add --set-exit-code, to decide it.
 
     --share-commands
         Use a single command chain for both streams. Lines from standard output and standard error are processed
@@ -263,11 +272,12 @@ COMMANDS
         signals in order.
 
     -e, --set-exit-code CODE
-        Use CODE (0..255) as the exit code of tea instead of PROGRAM's. There is one exit code; the last command to
-        set it wins, and time based commands can set it between lines.
+        Use CODE (0..255) as the exit code of tea instead of PROGRAM's (or --ended-exit's). There is one exit code;
+        the last command to set it wins, and time based commands can set it between lines.
 
     --clear-exit-code
-        Undo --set-exit-code: tea exits with PROGRAM's exit code again unless it is set once more later.
+        Undo --set-exit-code: tea exits with PROGRAM's exit code (or --ended-exit's) again unless it is set once
+        more later.
 
     -x, --exit CODE
         Stop PROGRAM with the stop signal (SIGTERM, or --stop-signal) and use CODE as the exit code of tea: the
@@ -295,13 +305,15 @@ EXAMPLES
         tea -p "operation completed" -s INT -- command
 
     Wait until a PostgreSQL container reports that it is ready, then stop watching its logs and exit with 0. If it
-    is not ready within two minutes, stop watching and exit with 1:
+    is not ready within two minutes, stop watching and exit with 1. If the container stops before it is ready,
+    "docker logs -f" ends on its own; exit with 2 then, not with the 0 of "docker logs":
 
-        docker start pg && tea -p "ready to accept connections" --exit 0 --deadline 120s -- docker logs -f pg
+        docker start pg && tea -p "ready to accept connections" --exit 0 --deadline 120s --ended-exit 2 \
+            -- docker logs -f pg
 
     The same without the shorthands, interrupting "docker logs" with SIGINT instead of SIGTERM:
 
-        docker start pg && tea \
+        docker start pg && tea --ended-exit 2 \
             -c -p "ready to accept connections" --set-exit-code 0 --signal SIGINT \
             -c --timeout 120s --set-exit-code 1 --signal SIGINT \
             -- docker logs -f pg

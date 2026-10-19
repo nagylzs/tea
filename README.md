@@ -13,8 +13,9 @@ so `tea` can sit in front of any program.
 
 ```sh
 # wait until the server says it is ready, then stop watching and exit 0;
-# if that does not happen within two minutes, exit 1 instead
-tea -p "ready to accept connections" --exit 0 --deadline 120s -- docker logs -f pg
+# if that does not happen within two minutes, exit 1 instead;
+# if the container stops first, exit 2
+tea -p "ready to accept connections" --exit 0 --deadline 120s --ended-exit 2 -- docker logs -f pg
 ```
 
 The name is a nod to `tee`: like `tee`, it sits in the middle of a data stream. Unlike `tee`, the stream is the
@@ -29,7 +30,7 @@ nothing to do with terminals. `tea` covers the common cases in one line, with a 
 | Job | Command |
 |---|---|
 | Wait for a pattern, then interrupt the program | `tea -p "operation completed" -s INT -- command` |
-| Readiness wait with a deadline and a meaningful exit code | `tea -p ready --exit 0 --deadline 120s -- command` |
+| Readiness wait with a deadline and a meaningful exit code | `tea -p ready --exit 0 --deadline 120s --ended-exit 2 -- command` |
 | Act when the program has been quiet for a while | `tea --no-input-for 10s --exit 0 -- tail -f access.log` |
 | Answer a prompt | `tea --no-stdin -p "^Continue\?" -i $'y\n' -- ./installer` |
 | Run with a time limit | `tea --deadline 1h -- ./long-job` |
@@ -83,7 +84,7 @@ it listens to (stdout by default; `--std-err`, `--std-all`) and its patterns mat
 | Input | `-i INPUT`, `-f FILE`, `--close` |
 | Signals and exit code | `-s SIGNAL`, `-e CODE`, `--clear-exit-code`, `-x CODE` (stop the program and exit with CODE) |
 | Control flow | `--enable NAME`, `--disable NAME`, `--toggle NAME`, `-n` (next line), `--skip-to NAME` |
-| Global | `--deadline`, `--stop-signal`, `--no-stdin`, `--no-stdbuf`, `--share-commands`, `--share-streams`, `--pid`, `--line-buffer-size` |
+| Global | `--deadline`, `--ended-exit`, `--stop-signal`, `--no-stdin`, `--no-stdbuf`, `--share-commands`, `--share-streams`, `--pid`, `--line-buffer-size` |
 
 Some details worth knowing:
 
@@ -94,6 +95,8 @@ Some details worth knowing:
   directly. `-i` and `-f` write into the same ordered queue. Use `--no-stdin` when `tea` runs in the background of an
   interactive shell or when its stdin is already at end of file but you rely on `-i`.
 - **Exit code.** By default `tea` exits with the program's exit code. `-e`, `-x` and `--deadline` override it.
+  `--ended-exit CODE` replaces it when the program ends and no command has set one, so that a readiness wait can tell
+  "ready" from "gone": `docker logs -f` of a container that stops before it is ready ends with 0, too.
 - **Buffering.** `tea` can only react to lines the program has flushed. It runs the program through `stdbuf -oL` so
   glibc programs line-buffer, but Python, Perl and Ruby need their own switch (`python3 -u`, `$| = 1`,
   `$stdout.sync = true`). The help text has a section on this per runtime.
@@ -112,7 +115,7 @@ Wait for a PostgreSQL container, written out without the `--exit` and `--deadlin
 `docker logs` with SIGINT instead of SIGTERM:
 
 ```sh
-docker start pg && tea \
+docker start pg && tea --ended-exit 2 \
     -c -p "ready to accept connections" --set-exit-code 0 --signal SIGINT \
     -c --timeout 120s --set-exit-code 1 --signal SIGINT \
     -- docker logs -f pg

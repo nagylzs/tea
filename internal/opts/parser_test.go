@@ -151,6 +151,17 @@ func TestGlobalOptions(t *testing.T) {
 			t.Errorf("StopSignal = %v", o.StopSignal)
 		}
 	})
+	t.Run("--ended-exit", func(t *testing.T) {
+		o := mustParse(t, withTail("-c")...)
+		if o.EndedExit != nil {
+			t.Errorf("EndedExit = %v by default", *o.EndedExit)
+		}
+		// global: allowed after a command, and does not start one
+		o = mustParse(t, withTail("-p", "x", "--ended-exit", "5")...)
+		if o.EndedExit == nil || *o.EndedExit != 5 || len(o.Commands) != 1 {
+			t.Errorf("EndedExit = %v, %d commands", o.EndedExit, len(o.Commands))
+		}
+	})
 	t.Run("--share-commands", func(t *testing.T) {
 		o := mustParse(t, withTail("--share-commands", "-c")...)
 		if !o.ShareCommands || o.ShareStreams {
@@ -540,6 +551,9 @@ func TestParseErrors(t *testing.T) {
 		{"--exit with --clear-exit-code", withTail("-c", "-x", "0", "--clear-exit-code"), "--exit cannot be combined"},
 		{"--exit with -s", withTail("-c", "-x", "0", "-s", "SIGINT"), "--exit cannot be combined"},
 		{"--stop-signal invalid", withTail("--stop-signal", "SIGNOPE", "-c"), "signal name or a signal number"},
+		{"--ended-exit too big", withTail("--ended-exit", "256", "-c"), "between 0 and 255"},
+		{"--ended-exit not int", withTail("--ended-exit", "gone", "-c"), "must be an int"},
+		{"--ended-exit alone", withTail("--ended-exit", "2"), "at least one command"},
 		{"unknown signal name", withTail("-c", "-s", "SIGNOPE"), "signal name or a signal number"},
 		{"invalid signal number", withTail("-c", "-s", "999"), "invalid signal number"},
 		{"invalid fg color", withTail("-c", "--fg-color", "pink"), "invalid color name"},

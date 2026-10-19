@@ -22,6 +22,7 @@ type Type struct {
 	NoStdIn        bool
 	StopSignal     syscall.Signal
 	Deadline       *time.Duration
+	EndedExit      *int32 // --ended-exit: exit code when PROGRAM ends and no command has set one
 	ShareCommands  bool
 	ShareStreams   bool
 	Commands       []Command
@@ -51,6 +52,7 @@ const (
 	NoStdIn
 	StopSignal
 	Deadline
+	EndedExit
 	ShareCommands
 	ShareStreams
 	NewCommand
@@ -120,6 +122,7 @@ var longOptions = map[string]Option{
 	"--no-stdin":         NoStdIn,
 	"--stop-signal":      StopSignal,
 	"--deadline":         Deadline,
+	"--ended-exit":       EndedExit,
 	"--share-commands":   ShareCommands,
 	"--share-streams":    ShareStreams,
 	"--command":          NewCommand,
@@ -211,6 +214,8 @@ func internalParseArgs() error {
 			Opts.NoStdIn = true
 		case Deadline:
 			Opts.Deadline, err2 = popDurationArg(arg)
+		case EndedExit:
+			Opts.EndedExit, err2 = popExitCodePArg(arg)
 		case StopSignal:
 			var sig *syscall.Signal
 			sig, err2 = popSignalPArg(arg)
@@ -374,6 +379,8 @@ func isGlobalOption(opt Option) bool {
 	case StopSignal:
 		return true
 	case Deadline:
+		return true
+	case EndedExit:
 		return true
 	case ShareCommands:
 		return true

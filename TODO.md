@@ -22,6 +22,9 @@
   Implement only if a concrete use case appears.
 - [x] Forward tea's own stdin to the child. Done: `ForwardStdIn`, raw chunks, EOF closes the child's stdin,
   `--no-stdin` opts out.
+- [x] An exit code for when PROGRAM ends on its own, so a readiness wait can tell "ready" from "gone" (a container that
+  stops before it is ready ends `docker logs -f` with 0). Done: global `--ended-exit CODE`, used when PROGRAM ends and
+  no command has set the exit code; the readiness examples in README.md and USAGE.txt use it.
 
 ## Correctness
 

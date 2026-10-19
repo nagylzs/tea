@@ -231,12 +231,17 @@ func main() {
 	ec := m.FixedExitCode.Load()
 	if ec >= 0 {
 		os.Exit(int(ec))
-	} else {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			fmt.Fprintln(os.Stderr, exitErr.Error())
-			os.Exit(exitErr.ExitCode())
-		}
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		fmt.Fprintln(os.Stderr, exitErr.Error())
+	}
+	if o.EndedExit != nil {
+		// PROGRAM ended and no command decided the outcome
+		os.Exit(int(*o.EndedExit))
+	}
+	if exitErr != nil {
+		os.Exit(exitErr.ExitCode())
 	}
 }
 

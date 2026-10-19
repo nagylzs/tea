@@ -4,6 +4,16 @@ All notable changes to tea are listed here. The format follows [Keep a Changelog
 the version numbers follow [Semantic Versioning](https://semver.org/). Release notes on GitHub are the same text:
 the section for a version is the annotation of its tag.
 
+## [Unreleased]
+
+### Added
+
+- `--ended-exit CODE`: exit with CODE when the program ends and no command has set the exit code, so that a
+  readiness wait can tell "ready" from "gone". In
+  `tea -p "ready to accept connections" --exit 0 --deadline 120s -- docker logs -f pg`, a container that stops
+  before it is ready ends `docker logs -f` with 0, and tea exited with 0 as if it were ready; with
+  `--ended-exit 2` it exits with 2.
+
 ## [2.0.0] - 2026-09-25
 
 tea runs a program, watches its output line by line, and acts on what it prints. This release makes the
@@ -64,5 +74,6 @@ Pre-release (tagged `latest` at the time, since removed). Line processing, patte
 enable/disable/toggle and branching between commands. Time based conditions and input to the program were parsed
 but not implemented.
 
+[Unreleased]: https://github.com/nagylzs/tea/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/nagylzs/tea/releases/tag/v2.0.0
 [1.0.0]: https://github.com/nagylzs/tea/tree/f2f87dd6d5e988ce1e6f8ea03b9a2b62aff91634

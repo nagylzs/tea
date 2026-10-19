@@ -755,6 +755,55 @@ func TestDeadline(t *testing.T) {
 	})
 }
 
+func TestEndedExit(t *testing.T) {
+	t.Run("replaces a successful exit", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--ended-exit", "5", "-p", "ready", "-x", "0"}, emit("out:starting")...)...)
+		expect(t, r, "starting\n", "", 5)
+	})
+	t.Run("replaces a failed exit, which is still reported", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--ended-exit", "5", "-c"}, emit("out:a", "exit:3")...)...)
+		if r.code != 5 || r.stdout != "a\n" || !strings.Contains(r.stderr, "exit status 3") {
+			t.Errorf("code=%d stdout=%q stderr=%q", r.code, r.stdout, r.stderr)
+		}
+	})
+	t.Run("a code set by a command wins", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--ended-exit", "5", "-p", "^b$", "-e", "42"}, emit("out:a", "out:b", "exit:3")...)...)
+		if r.code != 42 {
+			t.Errorf("code=%d, want 42", r.code)
+		}
+	})
+	t.Run("--clear-exit-code falls back to it", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--ended-exit", "5", "-c", "-p", "a", "-e", "10", "-c", "-p", "b", "--clear-exit-code"},
+			emit("out:a", "out:b", "exit:3")...)...)
+		if r.code != 5 {
+			t.Errorf("code=%d, want 5", r.code)
+		}
+	})
+	t.Run("--signal alone does not set the exit code", func(t *testing.T) {
+		r := runTea(t, tea([]string{"--ended-exit", "5", "-p", "^ready$", "-s", "SIGKILL"}, "signals.py")...)
+		if r.code != 5 || !strings.Contains(r.stderr, "signal: killed") {
+			t.Errorf("code=%d stderr=%q", r.code, r.stderr)
+		}
+	})
+	t.Run("readiness wait, all three outcomes", func(t *testing.T) {
+		opts := func(deadline string) []string {
+			return []string{"-p", "ready", "--exit", "0", "--deadline", deadline, "--ended-exit", "2"}
+		}
+		r := runTea(t, tea(opts("5s"), emit("out:ready", "sleep:15")...)...)
+		if r.code != 0 || r.stdout != "ready\n" {
+			t.Errorf("ready: code=%d stdout=%q", r.code, r.stdout)
+		}
+		r = runTea(t, tea(opts("500ms"), emit("out:starting", "sleep:15")...)...)
+		if r.code != 1 || r.stdout != "starting\n" {
+			t.Errorf("deadline: code=%d stdout=%q", r.code, r.stdout)
+		}
+		r = runTea(t, tea(opts("5s"), emit("out:starting")...)...)
+		if r.code != 2 || r.stdout != "starting\n" || r.took > 3*time.Second {
+			t.Errorf("gone: code=%d stdout=%q took=%v", r.code, r.stdout, r.took)
+		}
+	})
+}
+
 func TestSignalKilledChildExitCode(t *testing.T) {
 	// SIGKILL is not caught: the child dies by signal, exec reports -1, which becomes 255
 	r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-s", "SIGKILL"}, "signals.py")...)
