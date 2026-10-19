@@ -1,7 +1,7 @@
 # tea
 
 [![CI](https://github.com/nagylzs/tea/actions/workflows/go.yml/badge.svg)](https://github.com/nagylzs/tea/actions/workflows/go.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/nagylzs/tea.svg)](https://pkg.go.dev/github.com/nagylzs/tea)
+[![Go Reference](https://pkg.go.dev/badge/github.com/nagylzs/tea/v2.svg)](https://pkg.go.dev/github.com/nagylzs/tea/v2)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 **Run a program, watch its output line by line, and act on what it prints.**
@@ -46,7 +46,7 @@ Linux only. `tea` is a single static binary; it uses `stdbuf` from GNU coreutils
 With Go 1.25 or newer:
 
 ```sh
-go install github.com/nagylzs/tea/cmd/tea@latest
+go install github.com/nagylzs/tea/v2/cmd/tea@latest
 ```
 
 Or download a binary for amd64 or arm64 from the [releases page](https://github.com/nagylzs/tea/releases); releases

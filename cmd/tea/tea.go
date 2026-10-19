@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/nagylzs/tea/internal/opts"
-	"github.com/nagylzs/tea/internal/version"
+	"github.com/nagylzs/tea/v2/internal/opts"
+	"github.com/nagylzs/tea/v2/internal/version"
 	"golang.org/x/sys/unix"
 )
 

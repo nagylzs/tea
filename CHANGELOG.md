@@ -4,6 +4,14 @@ All notable changes to tea are listed here. The format follows [Keep a Changelog
 the version numbers follow [Semantic Versioning](https://semver.org/). Release notes on GitHub are the same text:
 the section for a version is the annotation of its tag.
 
+## [Unreleased]
+
+### Fixed
+
+- `go install` installs releases: the module path is now `github.com/nagylzs/tea/v2`, as Go requires from v2 on,
+  and `go install github.com/nagylzs/tea/v2/cmd/tea@latest` installs the latest release. The old path
+  `github.com/nagylzs/tea/cmd/tea` only ever installed the newest commit, never a release, and no longer works.
+
 ## [2.1.0] - 2026-10-19
 
 A readiness wait can now tell "ready" from "gone", and the `--pid` file no longer outlives a run that did not
@@ -82,6 +90,7 @@ Pre-release (tagged `latest` at the time, since removed). Line processing, patte
 enable/disable/toggle and branching between commands. Time based conditions and input to the program were parsed
 but not implemented.
 
+[Unreleased]: https://github.com/nagylzs/tea/compare/v2.1.0...HEAD
 [2.1.0]: https://github.com/nagylzs/tea/releases/tag/v2.1.0
 [2.0.0]: https://github.com/nagylzs/tea/releases/tag/v2.0.0
 [1.0.0]: https://github.com/nagylzs/tea/tree/f2f87dd6d5e988ce1e6f8ea03b9a2b62aff91634

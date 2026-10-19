@@ -1,4 +1,4 @@
-module github.com/nagylzs/tea
+module github.com/nagylzs/tea/v2
 
 // at least 1.23 is required because of how timers work
 go 1.25
