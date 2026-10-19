@@ -101,7 +101,8 @@ GLOBAL OPTIONS
         List the available signal names and numbers and exit.
 
     --pid FILE
-        Write the process id of PROGRAM to FILE when it has started, and delete FILE when tea exits. FILE must not
+        Write the process id of PROGRAM to FILE when it has started, and delete FILE when tea exits, whatever the
+        exit code, also after a fatal error. Only a signal that kills tea itself leaves FILE behind. FILE must not
         exist beforehand.
 
     --line-buffer-size SIZE

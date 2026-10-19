@@ -66,7 +66,8 @@ Two packages:
   `internalParseArgs`, and usually a check in `validateCommand`.**
 - `cmd/tea/tea.go` — runtime. Unless `--no-stdbuf` (or stdbuf is not on PATH, which only warns), PROGRAM is wrapped as
   `stdbuf -oL -eL PROGRAM ...` to force
-  line-buffered child output.
+  line-buffered child output. Once PROGRAM has started, exit only through `exit(code)` / `fatal(...)`, never
+  `os.Exit`/`log.Fatal`: they remove the `--pid` file, which a `defer` cannot do because `os.Exit` skips it.
 
 ### Data flow (tea.go)
 

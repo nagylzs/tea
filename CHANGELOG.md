@@ -14,6 +14,11 @@ the section for a version is the annotation of its tag.
   before it is ready ends `docker logs -f` with 0, and tea exited with 0 as if it were ready; with
   `--ended-exit 2` it exits with 2.
 
+### Fixed
+
+- The `--pid` file was only removed when tea exited with 0, so the next run refused to start because the file
+  already existed. It is now removed on every exit, including fatal errors.
+
 ## [2.0.0] - 2026-09-25
 
 tea runs a program, watches its output line by line, and acts on what it prints. This release makes the

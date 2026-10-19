@@ -1186,6 +1186,33 @@ func TestPidFile(t *testing.T) {
 	}
 }
 
+func TestPidFileIsRemovedOnEveryExit(t *testing.T) {
+	cases := []struct {
+		name string
+		opts []string
+		prog []string
+		code int
+	}{
+		{"PROGRAM fails", []string{"-c"}, emit("out:a", "exit:3"), 3},
+		{"--exit", []string{"-p", "a", "--exit", "7"}, emit("out:a", "sleep:15"), 7},
+		{"--deadline", []string{"--deadline", "500ms"}, emit("sleep:15"), 1},
+		{"--ended-exit", []string{"--ended-exit", "5", "-c"}, emit("out:a"), 5},
+		{"fatal error", []string{"--line-buffer-size", "1024", "-c"}, emit("long:2000"), 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pid := filepath.Join(t.TempDir(), "tea.pid")
+			r := runTea(t, tea(append([]string{"--pid", pid}, c.opts...), c.prog...)...)
+			if r.code != c.code {
+				t.Errorf("code=%d, want %d (stderr=%q)", r.code, c.code, r.stderr)
+			}
+			if _, err := os.Stat(pid); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("pid file was not removed after exit (stat err = %v)", err)
+			}
+		})
+	}
+}
+
 func TestPidFileMustNotExist(t *testing.T) {
 	pid := filepath.Join(t.TempDir(), "tea.pid")
 	if err := os.WriteFile(pid, []byte("1"), 0644); err != nil {

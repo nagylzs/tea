@@ -58,6 +58,31 @@ func ListSignals() {
 
 var m Main
 
+// pidFile is the --pid file to remove when tea exits, "" if there is none.
+var pidFile string
+var pidFileOnce sync.Once
+
+// exit removes the --pid file and exits with code. Once PROGRAM has started,
+// tea exits only through exit and fatal: os.Exit (and so log.Fatal) skips
+// deferred calls, which would leave the pid file behind.
+func exit(code int) {
+	pidFileOnce.Do(func() {
+		if pidFile == "" {
+			return
+		}
+		if err := os.Remove(pidFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("warning: cannot remove pid file: %v", err)
+		}
+	})
+	os.Exit(code)
+}
+
+// fatal is log.Fatal for errors after PROGRAM has started, see exit.
+func fatal(v ...any) {
+	log.Print(v...)
+	exit(1)
+}
+
 func main() {
 	o, err := opts.ParseArgs()
 	if err != nil {
@@ -106,16 +131,12 @@ func main() {
 	}
 
 	if o.PidFile != "" {
+		// set first, so that a partly written file is removed as well
+		pidFile = o.PidFile
 		err = os.WriteFile(o.PidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
 		if err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
-		defer func() {
-			err := os.Remove(o.PidFile)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}()
 	}
 
 	// --send-input and --close requests from all processors go through one
@@ -230,7 +251,7 @@ func main() {
 
 	ec := m.FixedExitCode.Load()
 	if ec >= 0 {
-		os.Exit(int(ec))
+		exit(int(ec))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -238,11 +259,12 @@ func main() {
 	}
 	if o.EndedExit != nil {
 		// PROGRAM ended and no command decided the outcome
-		os.Exit(int(*o.EndedExit))
+		exit(int(*o.EndedExit))
 	}
 	if exitErr != nil {
-		os.Exit(exitErr.ExitCode())
+		exit(exitErr.ExitCode())
 	}
+	exit(0)
 }
 
 func ReadLines(reader io.ReadCloser, bufSize int, inStdErr bool, ch LineChannel, wgRead *sync.WaitGroup) {
@@ -255,7 +277,7 @@ func ReadLines(reader io.ReadCloser, bufSize int, inStdErr bool, ch LineChannel,
 	}
 	if err := scanner.Err(); err != nil {
 		// e.g. bufio.ErrTooLong when a line exceeds --line-buffer-size
-		log.Fatal(err)
+		fatal(err)
 	}
 	if wgRead == nil {
 		close(ch)
@@ -268,7 +290,7 @@ func WriteData(writer io.WriteCloser, ch chan string, wg *sync.WaitGroup) {
 	for line := range ch {
 		_, err := writer.Write([]byte(line))
 		if err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 	}
 	if wg != nil {
@@ -482,7 +504,7 @@ func evaluateTimers(chains []Chain, cmdIndices map[string]int, chStdInIn chan st
 func targets(chains []Chain, cmdIndices map[string]int, n string, opt string) []*opts.Command {
 	i, ok := cmdIndices[n]
 	if !ok {
-		log.Fatal(fmt.Errorf("internal error: %s references to non-existent command %v", opt, n))
+		fatal(fmt.Errorf("internal error: %s references to non-existent command %v", opt, n))
 	}
 	var out []*opts.Command
 	for _, chain := range chains {
@@ -513,7 +535,7 @@ func targets(chains []Chain, cmdIndices map[string]int, n string, opt string) []
 func applyActions(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdInRequest, a *opts.CommandActions, cmdIdx *int, closeStdIn *bool) bool {
 	if a.Signal != nil {
 		if err := syscall.Kill(m.Cmd.Process.Pid, *a.Signal); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 	}
 
@@ -525,7 +547,7 @@ func applyActions(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdI
 		// read at execution time: the file need not exist when tea starts
 		content, err := os.ReadFile(*a.InputFile)
 		if err != nil {
-			log.Fatalf("--send-input-file: %v", err)
+			fatal(fmt.Errorf("--send-input-file: %v", err))
 		}
 		chStdInIn <- stdInRequest{data: string(content)}
 	}
@@ -545,7 +567,7 @@ func applyActions(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdI
 	if a.Exit != nil {
 		// --exit CODE: stop PROGRAM with the stop signal and use CODE as tea's exit code
 		if err := syscall.Kill(m.Cmd.Process.Pid, m.Opts.StopSignal); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 		m.FixedExitCode.Store(*a.Exit)
 	}
@@ -575,7 +597,7 @@ func applyActions(chains []Chain, cmdIndices map[string]int, chStdInIn chan stdI
 	if a.SkipTo != nil {
 		i, ok := cmdIndices[*a.SkipTo]
 		if !ok {
-			log.Fatal(fmt.Errorf("internal error: --skip-to references to non-existent command %v", *a.SkipTo))
+			fatal(fmt.Errorf("internal error: --skip-to references to non-existent command %v", *a.SkipTo))
 		}
 		*cmdIdx = i
 	}
