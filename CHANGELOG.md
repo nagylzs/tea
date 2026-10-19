@@ -11,6 +11,9 @@ the section for a version is the annotation of its tag.
 - `go install` installs releases: the module path is now `github.com/nagylzs/tea/v2`, as Go requires from v2 on,
   and `go install github.com/nagylzs/tea/v2/cmd/tea@latest` installs the latest release. The old path
   `github.com/nagylzs/tea/cmd/tea` only ever installed the newest commit, never a release, and no longer works.
+- `tea --version` of a release binary printed `branch HEAD`, because CI builds it from the tag. The branch is now
+  left out of such builds; the version names the tag. Binaries built with `go install` or a plain `go build`
+  print the version and commit that Go embeds instead of `dev` and `unset`.
 
 ## [2.1.0] - 2026-10-19
 

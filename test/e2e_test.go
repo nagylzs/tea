@@ -205,7 +205,8 @@ func TestHelp(t *testing.T) {
 
 func TestVersion(t *testing.T) {
 	r := runTea(t, "--version")
-	// not built via scripts/build.py, so the defaults show
+	// TestMain builds from a file list, not via scripts/build.py, so neither
+	// -ldflags nor Go's module build info set anything: the defaults show
 	expect(t, r, "tea dev (commit unset, branch unset, built unset)\n", "", 0)
 }
 

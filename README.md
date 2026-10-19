@@ -58,7 +58,7 @@ To build from source:
 ```sh
 git clone https://github.com/nagylzs/tea.git
 cd tea
-go build -o tea ./cmd/tea          # plain build, "tea dev" in --version
+go build -o tea ./cmd/tea          # plain build, Go's pseudo-version in --version
 python3 scripts/build.py           # static release binaries with version info -> dist/linux/{amd64,arm64}/tea
 ```
 

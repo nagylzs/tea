@@ -5,7 +5,9 @@ usage: scripts/build.py [--debug] [ARCH...]
 
 Builds dist/linux/ARCH/tea for every ARCH given (default: amd64 arm64) as a
 static, stripped binary with -trimpath, and injects the version, commit,
-branch and build time into internal/version. --debug keeps symbols and DWARF.
+branch and build time into internal/version. The branch is empty on a detached
+HEAD (CI checks out the tag of a release build; the version names the tag
+then). --debug keeps symbols and DWARF.
 The working tree is not modified.
 """
 import datetime
@@ -40,6 +42,8 @@ def main(argv: list[str]) -> int:
     version = git("describe", "--tags", "--match", "v*", "--always", "--dirty")
     commit = git("rev-parse", "HEAD")
     branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    if branch == "HEAD":
+        branch = ""  # detached, see the docstring
     built = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"version={version} commit={commit} branch={branch} built={built}")
 

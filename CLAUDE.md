@@ -23,7 +23,8 @@ go vet ./...
 python3 scripts/build.py [ARCH...]  # static release build -> dist/linux/<arch>/tea (default amd64 arm64); injects
                                     # Version/Commit/Branch/Built into internal/version via -ldflags -X; --debug keeps symbols
 ./tea --help                        # prints USAGE.txt
-./tea --version                     # "tea dev (commit unset, ...)" unless built via scripts/build.py
+./tea --version                     # Go's pseudo-version and commit, "branch unset, built unset", unless built
+                                    # via scripts/build.py (release builds from a tag have no branch)
 ```
 
 CI (`.github/workflows/go.yml`) vets, tests and runs the build script on every push; `release.yml` does the same on a
