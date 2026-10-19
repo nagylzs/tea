@@ -29,8 +29,11 @@ python3 scripts/build.py [ARCH...]  # static release build -> dist/linux/<arch>/
 
 CI (`.github/workflows/go.yml`) vets, tests and runs the build script on every push; `release.yml` does the same on a
 `v*` tag and attaches `tea-linux-{amd64,arm64}` plus `SHA256SUMS` to a GitHub release whose notes are the annotated
-tag message (`git tag -a vX.Y.Z -F notes.md`). To release: add the version section to `CHANGELOG.md`, commit, then
-tag with that section as the annotation.
+tag message. To release: turn `[Unreleased]` in `CHANGELOG.md` into the version section, commit, then tag with
+`git tag -a vX.Y.Z --cleanup=verbatim -F notes.md`. Without `--cleanup=verbatim` git strips every line starting with
+`#` as a comment, so the release notes lose their headings. `notes.md` is the version section laid out like the
+earlier releases: a `tea X.Y.Z` title line, the intro, the `###` headings as `##`, and a closing `## Install`
+section that points to the binaries and `go install github.com/nagylzs/tea/v2/cmd/tea@vX.Y.Z`.
 
 ```bash
 go test ./...                       # what CI runs (after go vet); needs python3 and stdbuf on PATH
