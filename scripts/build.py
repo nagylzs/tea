@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Release build for tea (Linux only).
+"""Release build for tea (Linux and macOS).
 
-usage: scripts/build.py [--debug] [ARCH...]
+usage: scripts/build.py [--debug] [OS/ARCH...]
 
-Builds dist/linux/ARCH/tea for every ARCH given (default: amd64 arm64) as a
-static, stripped binary with -trimpath, and injects the version, commit,
-branch and build time into internal/version. The branch is empty on a detached
-HEAD (CI checks out the tag of a release build; the version names the tag
-then). --debug keeps symbols and DWARF.
+Builds dist/OS/ARCH/tea for every target given (default: linux/amd64
+linux/arm64 darwin/amd64 darwin/arm64; a bare ARCH means linux/ARCH) as a
+stripped binary with -trimpath and cgo disabled, which makes the Linux binaries
+static, and injects the version, commit, branch and build time into
+internal/version. The branch is empty on a detached HEAD (CI checks out the
+tag of a release build; the version names the tag then). --debug keeps
+symbols and DWARF.
 The working tree is not modified.
 """
 import datetime
@@ -17,7 +19,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DEFAULT_ARCHES = ["amd64", "arm64"]
+DEFAULT_TARGETS = ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"]
 
 
 def module_name() -> str:
@@ -36,7 +38,7 @@ def git(*args: str) -> str:
 
 def main(argv: list[str]) -> int:
     debug = "--debug" in argv
-    arches = [a for a in argv if not a.startswith("--")] or DEFAULT_ARCHES
+    targets = [a if "/" in a else f"linux/{a}" for a in argv if not a.startswith("--")] or DEFAULT_TARGETS
 
     version_pkg = f"{module_name()}/internal/version"
     version = git("describe", "--tags", "--match", "v*", "--always", "--dirty")
@@ -56,10 +58,11 @@ def main(argv: list[str]) -> int:
     if not debug:
         ldflags += ["-s", "-w"]
 
-    for arch in arches:
-        out = ROOT / "dist" / "linux" / arch / "tea"
+    for target in targets:
+        goos, arch = target.split("/")
+        out = ROOT / "dist" / goos / arch / "tea"
         out.parent.mkdir(parents=True, exist_ok=True)
-        env = dict(os.environ, GOOS="linux", GOARCH=arch, CGO_ENABLED="0")
+        env = dict(os.environ, GOOS=goos, GOARCH=arch, CGO_ENABLED="0")
         cmd = ["go", "build", "-trimpath", "-ldflags", " ".join(ldflags), "-o", str(out), "./cmd/tea"]
         print(" ".join(cmd))
         subprocess.check_call(cmd, cwd=ROOT, env=env)

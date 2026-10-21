@@ -1,7 +1,7 @@
 // Package e2e runs the built tea binary against small python programs and
 // checks its output, exit code and side effects.
 //
-// Requirements: go, python3 and stdbuf(1) on PATH (Linux only, like tea).
+// Requirements: go, python3 and stdbuf(1) on PATH (Linux, or macOS 15 and newer).
 package e2e
 
 import (
@@ -14,7 +14,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -677,7 +679,9 @@ func TestSignalWithoutPrefix(t *testing.T) {
 }
 
 func TestSignalByNumber(t *testing.T) {
-	r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-s", "12", "-c", "-p", "got SIGUSR2", "-s", "15"},
+	// signal numbers differ between systems: SIGUSR2 is 12 on Linux and 31 on macOS
+	usr2 := strconv.Itoa(int(syscall.SIGUSR2))
+	r := runTea(t, tea([]string{"-c", "-p", "^ready$", "-s", usr2, "-c", "-p", "got SIGUSR2", "-s", "15"},
 		"signals.py")...)
 	expect(t, r, "ready\ngot SIGUSR2\ngot SIGTERM\n", "", 0)
 }
@@ -1239,10 +1243,10 @@ func TestLineBufferSize(t *testing.T) {
 }
 
 func TestStdbufWrapping(t *testing.T) {
-	// GNU grep uses stdio and block-buffers its output when stdout is a pipe.
+	// grep (GNU or BSD) uses stdio and block-buffers its output when stdout is a pipe.
 	// It reads tea's forwarded stdin, which stays open, so the only way its
 	// match reaches tea before it exits is stdbuf's line buffering.
-	t.Run("stdbuf makes a glibc program line-buffered", func(t *testing.T) {
+	t.Run("stdbuf makes a stdio program line-buffered", func(t *testing.T) {
 		r := runTeaStdin(t, stdinDataOpen("first\n"), "-p", "^first$", "-s", "SIGKILL", "--", "grep", "first")
 		if r.stdout != "first\n" || r.code != 255 {
 			t.Errorf("stdout=%q code=%d stderr=%q", r.stdout, r.code, r.stderr)

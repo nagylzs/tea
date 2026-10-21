@@ -55,13 +55,15 @@ DESCRIPTION
     when it is not a terminal and flush it only when the buffer is full or when they exit, which would make tea see
     nothing for a long time and then everything at once. What helps depends on how PROGRAM was written:
 
-    C and C++ (glibc stdio, dynamically linked)
-        By default tea runs PROGRAM through stdbuf(1), which asks glibc to line-buffer standard output and standard
-        error. stdbuf replaces itself with PROGRAM (same process id) after setting the environment, so nothing else
-        changes. It has no effect on statically linked programs, on setuid programs, on programs that set their own
-        buffering, and on programs that do not use glibc (for example Alpine/musl binaries); use --no-stdbuf if
-        stdbuf itself causes trouble (it prints a warning when its helper library cannot be loaded). If stdbuf is
-        not installed at all, tea starts PROGRAM directly and prints a warning.
+    C and C++ (C library stdio)
+        By default tea runs PROGRAM through stdbuf(1), which asks the C library to line-buffer standard output and
+        standard error. stdbuf replaces itself with PROGRAM (same process id) after setting the environment, so
+        nothing else changes. It has no effect on programs that set their own buffering. On Linux, stdbuf comes with
+        GNU coreutils and works for dynamically linked glibc programs only: not for statically linked programs, setuid
+        programs or programs that do not use glibc (for example Alpine/musl binaries). Use --no-stdbuf if stdbuf
+        itself causes trouble (it prints a warning when its helper library cannot be loaded). On macOS, stdbuf is part
+        of the system from macOS 15 on, and the system C library honours it. If stdbuf is not installed at all, tea
+        starts PROGRAM directly and prints a warning.
     Python
         Ignores stdbuf and block-buffers standard output when it is a pipe. Start it as "python3 -u ..." or set
         PYTHONUNBUFFERED=1. Standard error is line-buffered on recent versions.

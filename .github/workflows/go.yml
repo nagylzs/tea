@@ -9,7 +9,11 @@ on:
 jobs:
 
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]   # the tests need stdbuf: macOS has it from 15 on
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -25,10 +29,13 @@ jobs:
         go vet ./...
         go test ./...
 
+    # the binaries for every target are cross-compiled once, on Linux
     - name: Build release binaries
-      run: python3 scripts/build.py amd64 arm64
+      if: runner.os == 'Linux'
+      run: python3 scripts/build.py linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
     - name: Upload Linux amd64 artifact
+      if: runner.os == 'Linux'
       uses: actions/upload-artifact@v4
       with:
         name: tea-linux-amd64
@@ -36,8 +43,25 @@ jobs:
         retention-days: 5
 
     - name: Upload Linux arm64 artifact
+      if: runner.os == 'Linux'
       uses: actions/upload-artifact@v4
       with:
         name: tea-linux-arm64
         path: dist/linux/arm64/tea
+        retention-days: 5
+
+    - name: Upload macOS amd64 artifact
+      if: runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: tea-darwin-amd64
+        path: dist/darwin/amd64/tea
+        retention-days: 5
+
+    - name: Upload macOS arm64 artifact
+      if: runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: tea-darwin-arm64
+        path: dist/darwin/arm64/tea
         retention-days: 5

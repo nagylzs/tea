@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`tea` is a single-binary Go CLI (Linux-only: uses `syscall.Kill`, `golang.org/x/sys/unix`, and `stdbuf(1)`) that starts a
-child PROGRAM, reads its stdout/stderr line by line, and runs a user-defined chain of "commands" (conditions + actions)
-per line — sending signals, writing to the child's stdin, rewriting/coloring output, or overriding the exit code.
+`tea` is a single-binary Go CLI for Linux and macOS (Unix only: uses `syscall.Kill`, `golang.org/x/sys/unix`, and
+`stdbuf(1)`, which macOS ships from 15 on) that starts a child PROGRAM, reads its stdout/stderr line by line, and runs a
+user-defined chain of "commands" (conditions + actions) per line — sending signals, writing to the child's stdin,
+rewriting/coloring output, or overriding the exit code. There is no platform-specific code: the same source builds and
+passes the tests on both.
 
 ```
 tea COMMAND [COMMAND...] -- PROGRAM [ARG...]
@@ -20,23 +22,27 @@ an option's name or behaviour must be mirrored there** — it is the only user-f
 ```bash
 go build -o tea ./cmd/tea           # plain build
 go vet ./...
-python3 scripts/build.py [ARCH...]  # static release build -> dist/linux/<arch>/tea (default amd64 arm64); injects
+python3 scripts/build.py [OS/ARCH...]
+                                    # release build -> dist/<os>/<arch>/tea, cgo off (static on Linux); default
+                                    # {linux,darwin}/{amd64,arm64}, a bare ARCH means linux/ARCH; injects
                                     # Version/Commit/Branch/Built into internal/version via -ldflags -X; --debug keeps symbols
 ./tea --help                        # prints USAGE.txt
 ./tea --version                     # Go's pseudo-version and commit, "branch unset, built unset", unless built
                                     # via scripts/build.py (release builds from a tag have no branch)
 ```
 
-CI (`.github/workflows/go.yml`) vets, tests and runs the build script on every push; `release.yml` does the same on a
-`v*` tag and attaches `tea-linux-{amd64,arm64}` plus `SHA256SUMS` to a GitHub release whose notes are the annotated
-tag message. To release: turn `[Unreleased]` in `CHANGELOG.md` into the version section, commit, then tag with
+CI (`.github/workflows/go.yml`) vets and tests on Linux and macOS and runs the build script on every push; the
+binaries for all four targets are cross-compiled on the Linux runner (the Go linker ad-hoc signs darwin/arm64, which
+is all Apple silicon needs to run it). `release.yml` does the same on a `v*` tag and attaches
+`tea-{linux,darwin}-{amd64,arm64}` plus `SHA256SUMS` to a GitHub release whose notes are the annotated tag message.
+To release: turn `[Unreleased]` in `CHANGELOG.md` into the version section, commit, then tag with
 `git tag -a vX.Y.Z --cleanup=verbatim -F notes.md`. Without `--cleanup=verbatim` git strips every line starting with
 `#` as a comment, so the release notes lose their headings. `notes.md` is the version section laid out like the
 earlier releases: a `tea X.Y.Z` title line, the intro, the `###` headings as `##`, and a closing `## Install`
 section that points to the binaries and `go install github.com/nagylzs/tea/v2/cmd/tea@vX.Y.Z`.
 
 ```bash
-go test ./...                       # what CI runs (after go vet); needs python3 and stdbuf on PATH
+go test ./...                       # what CI runs (after go vet); needs python3 and stdbuf on PATH (macOS 15+)
 go test ./internal/...              # parser + validator only, fast
 go test ./test/ -run TestSignal -v  # one end-to-end test
 ```
@@ -50,7 +56,8 @@ Tests live in two places:
   `stdinData`/`stdinNull` model piped input and `/dev/null`. Children: `test/emit.py` (scriptable stdout/stderr/sleep/exit/stdin tokens), `test/signals.py`
   (prints received signals, exits on SIGTERM) and `test/withpty.py` (runs tea under a pseudo-terminal, needed for the
   color tests because fatih/color disables itself when stdout is not a TTY). Cross-stream ordering is not
-  deterministic, so tests that depend on it put `sleep:` tokens between lines.
+  deterministic, so tests that depend on it put `sleep:` tokens between lines. Signal numbers differ between
+  systems (SIGUSR2 is 12 on Linux, 31 on macOS), so a test that passes a number takes it from a `syscall` constant.
 
 Not covered because not implemented: `--or-timeout`, `--min-match-time`.
 

@@ -40,8 +40,9 @@ nothing to do with terminals. `tea` covers the common cases in one line, with a 
 
 ## Install
 
-Linux only. `tea` is a single static binary; it uses `stdbuf` from GNU coreutils when it is installed (see
-[Buffering](#how-it-works) below) and warns and runs the program directly when it is not.
+Linux and macOS. `tea` is a single binary; it uses `stdbuf` when it is installed (see [Buffering](#how-it-works)
+below) and warns and runs the program directly when it is not. On Linux `stdbuf` comes with GNU coreutils, on macOS it
+is part of the system from macOS 15 on.
 
 With Go 1.25 or newer:
 
@@ -49,9 +50,14 @@ With Go 1.25 or newer:
 go install github.com/nagylzs/tea/v2/cmd/tea@latest
 ```
 
-Or download a binary for amd64 or arm64 from the [releases page](https://github.com/nagylzs/tea/releases); releases
-are built by CI when a `v*` tag is pushed. Every push to `main` also leaves both binaries as artifacts on the
+Or download a binary for Linux (`tea-linux-amd64`, `tea-linux-arm64`) or macOS (`tea-darwin-arm64` for Apple
+silicon, `tea-darwin-amd64` for Intel) from the [releases page](https://github.com/nagylzs/tea/releases); releases are
+built by CI when a `v*` tag is pushed. Every push to `main` also leaves the binaries as artifacts on the
 [CI workflow](https://github.com/nagylzs/tea/actions/workflows/go.yml).
+
+The macOS binaries are not notarized, so macOS refuses to start one that a web browser downloaded until you remove
+the quarantine attribute with `xattr -d com.apple.quarantine tea`. Files downloaded with `curl` or
+`gh release download` are not quarantined.
 
 To build from source:
 
@@ -59,7 +65,7 @@ To build from source:
 git clone https://github.com/nagylzs/tea.git
 cd tea
 go build -o tea ./cmd/tea          # plain build, Go's pseudo-version in --version
-python3 scripts/build.py           # static release binaries with version info -> dist/linux/{amd64,arm64}/tea
+python3 scripts/build.py           # release binaries with version info -> dist/{linux,darwin}/{amd64,arm64}/tea
 ```
 
 ## How it works
@@ -98,7 +104,7 @@ Some details worth knowing:
   `--ended-exit CODE` replaces it when the program ends and no command has set one, so that a readiness wait can tell
   "ready" from "gone": `docker logs -f` of a container that stops before it is ready ends with 0, too.
 - **Buffering.** `tea` can only react to lines the program has flushed. It runs the program through `stdbuf -oL` so
-  glibc programs line-buffer, but Python, Perl and Ruby need their own switch (`python3 -u`, `$| = 1`,
+  programs that use C stdio line-buffer, but Python, Perl and Ruby need their own switch (`python3 -u`, `$| = 1`,
   `$stdout.sync = true`). The help text has a section on this per runtime.
 
 The complete reference is `tea --help`, also readable as [`cmd/tea/USAGE.txt`](cmd/tea/USAGE.txt).
@@ -131,7 +137,7 @@ tea --std-err -p "^ERROR" --exit 1 -- make all
 
 ```sh
 go vet ./...
-go test ./...                       # parser tests plus end-to-end tests; needs python3 and stdbuf
+go test ./...                       # parser tests plus end-to-end tests; needs python3 and stdbuf (macOS 15+)
 go test ./test/ -run TestTimeout -v # one end-to-end group
 ```
 
