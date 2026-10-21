@@ -4,7 +4,10 @@ All notable changes to tea are listed here. The format follows [Keep a Changelog
 the version numbers follow [Semantic Versioning](https://semver.org/). Release notes on GitHub are the same text:
 the section for a version is the annotation of its tag.
 
-## [Unreleased]
+## [2.2.0] - 2026-10-21
+
+macOS support: tea runs on macOS, and releases include binaries for Apple silicon and Intel Macs. No change in
+behaviour on Linux.
 
 ### Added
 
@@ -105,7 +108,7 @@ Pre-release (tagged `latest` at the time, since removed). Line processing, patte
 enable/disable/toggle and branching between commands. Time based conditions and input to the program were parsed
 but not implemented.
 
-[Unreleased]: https://github.com/nagylzs/tea/compare/v2.1.1...HEAD
+[2.2.0]: https://github.com/nagylzs/tea/releases/tag/v2.2.0
 [2.1.1]: https://github.com/nagylzs/tea/releases/tag/v2.1.1
 [2.1.0]: https://github.com/nagylzs/tea/releases/tag/v2.1.0
 [2.0.0]: https://github.com/nagylzs/tea/releases/tag/v2.0.0
